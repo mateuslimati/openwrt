@@ -1,0 +1,20 @@
+#!/bin/sh
+# LS1021A-IoT lab: the LAN (switch, eth2) gets a fixed address on the
+# existing 192.168.100.0/24 network instead of a DHCP lease.
+
+. /lib/functions.sh
+
+case "$(board_name)" in
+fsl,ls1021a|fsl,ls1021a-sdboot)
+	uci batch <<UCI
+set network.lan.proto='static'
+set network.lan.ipaddr='192.168.100.62'
+set network.lan.netmask='255.255.255.0'
+set network.lan.gateway='192.168.100.1'
+set network.lan.dns='192.168.100.1'
+commit network
+UCI
+	;;
+esac
+
+exit 0
