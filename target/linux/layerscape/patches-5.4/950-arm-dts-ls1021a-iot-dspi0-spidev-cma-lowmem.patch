@@ -1,0 +1,80 @@
+From: Mateus Lima <mateuslima.ti@gmail.com>
+Subject: [PATCH] arm: dts: ls1021a-iot: DSPI1 spidev for RTL8365MB, CMA in lowmem, non-coherent eTSEC
+
+The RTL8365MB switch on LS1021A-IoT is managed over SPI on DSPI1 CS1.
+Expose it as spidev, keep the CMA pool in lowmem so the eTSECs can
+allocate DMA buffers, and drop dma-coherent from the eTSECs: on silicon
+rev 1.0 they must run without cache snooping.
+
+---
+--- a/arch/arm/boot/dts/ls1021a-iot.dts	2026-10-18 16:16:23.229811446 -0300
++++ b/arch/arm/boot/dts/ls1021a-iot.dts	2026-10-18 17:48:08.635555196 -0300
+@@ -13,6 +13,24 @@
+ / {
+ 	model = "LS1021A IOT Board";
+ 
++	/*
++	 * CMA em lowmem: o default do kernel cai em highmem (acima de ~0xaf800000
++	 * com VMSPLIT_3G) e os eTSEC (dma-coherent) rejeitam essas paginas.
++	 */
++	reserved-memory {
++		#address-cells = <2>;
++		#size-cells = <2>;
++		ranges;
++
++		linux,cma {
++			compatible = "shared-dma-pool";
++			reusable;
++			size = <0x0 0x2000000>;
++			alloc-ranges = <0x0 0x80000000 0x0 0x20000000>;
++			linux,cma-default;
++		};
++	};
++
+ 	sys_mclk: clock-mclk {
+ 		compatible = "fixed-clock";
+ 		#clock-cells = <0>;
+@@ -79,7 +97,25 @@
+ 		};
+ };
+ 
++/*
++ * Gerencia do switch Realtek RTL8365MB (API rtl8367b): SPI no DSPI1, CS1.
++ * Protocolo: escrita 0x02 A15:8 A7:0 D15:8 D7:0, leitura 0x03 A15:8 A7:0 xx xx.
++ * Exposto como spidev para a ferramenta rtlsw.
++ */
++&dspi0 {
++	bus-num = <0>;
++	status = "okay";
++
++	rtl8365mb@1 {
++		compatible = "rohm,dh2228fv";
++		reg = <1>;
++		spi-max-frequency = <1000000>;
++	};
++};
++
+ &enet0 {
++	/* LS1021A rev 1.0: eTSEC sem snooping (como no SDK da NXP) */
++	/delete-property/ dma-coherent;
+ 	tbi-handle = <&tbi1>;
+ 	phy-handle = <&phy1>;
+ 	phy-connection-type = "sgmii";
+@@ -87,6 +123,8 @@
+ };
+ 
+ &enet1 {
++	/* LS1021A rev 1.0: eTSEC sem snooping (como no SDK da NXP) */
++	/delete-property/ dma-coherent;
+ 	tbi-handle = <&tbi1>;
+ 	phy-handle = <&phy3>;
+ 	phy-connection-type = "sgmii";
+@@ -94,6 +132,8 @@
+ };
+ 
+ &enet2 {
++	/* LS1021A rev 1.0: eTSEC sem snooping (como no SDK da NXP) */
++	/delete-property/ dma-coherent;
+ 	fixed-link = <0 1 1000 0 0>;
+ 	phy-connection-type = "rgmii-id";
+ 	status = "okay";
