@@ -1,0 +1,69 @@
+From: Mateus Lima <mateuslima.ti@gmail.com>
+Subject: [PATCH] net: gianfar: disable eTSEC snooping when the node is not dma-coherent
+
+LS1021A rev 1.0 needs the eTSEC used without cache snooping, as the NXP
+SDK kernel does (DMACTRL 0x03, ATTR 0). With TDSEN/TBDSEN/RDSEN set the
+TX path hangs under load. Take the decision from the device tree.
+
+---
+--- a/drivers/net/ethernet/freescale/gianfar.h	2026-10-18 17:47:57.525176238 -0300
++++ b/drivers/net/ethernet/freescale/gianfar.h	2026-10-18 17:47:57.543178496 -0300
+@@ -213,6 +213,9 @@
+ 
+ /* Init to do tx snooping for buffers and descriptors */
+ #define DMACTRL_INIT_SETTINGS   0x000000c3
++#define DMACTRL_TDSEN           0x00000080
++#define DMACTRL_TBDSEN          0x00000040
++#define DMACTRL_SNOOPING        (DMACTRL_TDSEN | DMACTRL_TBDSEN)
+ #define DMACTRL_GRS             0x00000010
+ #define DMACTRL_GTS             0x00000008
+ 
+--- a/drivers/net/ethernet/freescale/gianfar.c	2026-10-18 17:47:57.525176238 -0300
++++ b/drivers/net/ethernet/freescale/gianfar.c	2026-10-18 17:47:57.543178496 -0300
+@@ -1195,6 +1195,17 @@
+ 	free_skb_resources(priv);
+ }
+ 
++/* LS1021A rev 1.0 (e o kernel SDK da NXP) usa o eTSEC sem snooping de cache:
++ * quando o no do DT nao declara dma-coherent, nao ligue os bits de snoop
++ * no DMACTRL (TX) nem no ATTR (RX) e deixe o DMA API fazer a manutencao.
++ */
++static u32 gfar_dmactrl_init(struct gfar_private *priv)
++{
++	if (of_dma_is_coherent(priv->dev->of_node))
++		return DMACTRL_INIT_SETTINGS;
++	return DMACTRL_INIT_SETTINGS & ~DMACTRL_SNOOPING;
++}
++
+ static void gfar_start(struct gfar_private *priv)
+ {
+ 	struct gfar __iomem *regs = priv->gfargrp[0].regs;
+@@ -1207,7 +1218,8 @@
+ 
+ 	/* Initialize DMACTRL to have WWR and WOP */
+ 	tempval = gfar_read(&regs->dmactrl);
+-	tempval |= DMACTRL_INIT_SETTINGS;
++	tempval &= ~DMACTRL_SNOOPING;
++	tempval |= gfar_dmactrl_init(priv);
+ 	gfar_write(&regs->dmactrl, tempval);
+ 
+ 	/* Make sure we aren't stopped */
+@@ -3258,7 +3270,7 @@
+ 	/* Start with defaults, and add stashing
+ 	 * depending on driver parameters
+ 	 */
+-	attrs = ATTR_INIT_SETTINGS;
++	attrs = of_dma_is_coherent(priv->dev->of_node) ? ATTR_INIT_SETTINGS : 0;
+ 
+ 	if (priv->bd_stash_en)
+ 		attrs |= ATTR_BDSTASH;
+@@ -3578,7 +3590,8 @@
+ 
+ 	/* Initialize DMACTRL to have WWR and WOP */
+ 	tempval = gfar_read(&regs->dmactrl);
+-	tempval |= DMACTRL_INIT_SETTINGS;
++	tempval &= ~DMACTRL_SNOOPING;
++	tempval |= gfar_dmactrl_init(priv);
+ 	gfar_write(&regs->dmactrl, tempval);
+ 
+ 	/* Make sure we aren't stopped */
