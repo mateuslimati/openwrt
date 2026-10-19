@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <poll.h>
 #include <sys/ioctl.h>
 
 #include "lib/bluetooth.h"
@@ -61,7 +62,6 @@
 
 static const char *dev_name = "spartan";
 static bool verbose;
-static int hci_dev;
 static int kick_dd = -1;
 
 struct notifier {
@@ -533,7 +533,6 @@ static struct server *server_create(int fd)
 
 	populate_db(server);
 
-	kick_dd = hci_open_dev(hci_dev);
 	if (kick_dd >= 0)
 		server->ping_id = timeout_add(PING_MS, ping_cb, server, NULL);
 	return server;
@@ -689,7 +688,6 @@ int main(int argc, char *argv[])
 		switch (opt) {
 		case 'i':
 			dev_id = hci_devid(optarg);
-			hci_dev = dev_id;
 			if (dev_id < 0) {
 				perror("adapter");
 				return EXIT_FAILURE;
@@ -735,6 +733,24 @@ int main(int argc, char *argv[])
 		sleep(1);
 	}
 	printf("advertising as \"%s\"\n", dev_name);
+
+	/*
+	 * The KW41Z can also hang while it only advertises: keep checking it
+	 * while waiting for a central, and exit so it gets reset.
+	 */
+	kick_dd = hci_open_dev(dev_id);
+	for (;;) {
+		struct pollfd pfd = { .fd = lsk, .events = POLLIN };
+		int ret = poll(&pfd, 1, PING_MS);
+
+		if (ret > 0)
+			break;
+		if (ret < 0 && errno != EINTR) {
+			perror("poll");
+			return EXIT_FAILURE;
+		}
+		kick();
+	}
 
 	do {
 		optlen = sizeof(addr);
