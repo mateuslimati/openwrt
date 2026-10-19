@@ -10,7 +10,8 @@
  *  - writes go to a control register, default 0xF6: bit 0 drives LED0
  *    (CPLD image 2.9 or later), bits 1-3 select the SATA/SGMII and QE/LCD
  *    muxes and shut down the SerDes mux, bit 4 low holds the Arduino shield
- *    in reset (CPLD image 2.10 or later)
+ *    in reset (CPLD image 2.10 or later), bit 5 low makes the CPLD rebuild
+ *    the HDMI HSYNC/VSYNC from DE (2.11 or later)
  *
  * Reads never return what was written, so the driver keeps a copy of the
  * control register and never does read-modify-write on the hardware.
@@ -27,6 +28,7 @@
 #define CPLD_CTRL_DEFAULT	0xf6
 #define CPLD_CTRL_LED0		BIT(0)
 #define CPLD_CTRL_SHIELD_RUN	BIT(4)
+#define CPLD_CTRL_LCD_SYNC	BIT(5)
 
 struct ls1021aiot_cpld {
 	void __iomem *base;
@@ -118,6 +120,13 @@ static int ls1021aiot_cpld_probe(struct platform_device *pdev)
 	spin_lock_init(&cpld->lock);
 	cpld->ctrl = CPLD_CTRL_DEFAULT;
 	platform_set_drvdata(pdev, cpld);
+
+	/*
+	 * On rev 1.0 silicon the DCU sync pins are not available with the
+	 * console RCW: let the CPLD regenerate them from DE.
+	 */
+	if (of_property_read_bool(np, "fsl,lcd-sync-from-de"))
+		ls1021aiot_cpld_update(cpld, CPLD_CTRL_LCD_SYNC, 0);
 
 	cpld->led.name = of_get_property(np, "label", NULL) ?: "ls1021aiot:green:led0";
 	cpld->led.default_trigger = of_get_property(np, "linux,default-trigger", NULL);
