@@ -1,0 +1,17 @@
+From: Mateus Lima Alves <mateuslima.ti@gmail.com>
+Subject: [PATCH] arm: dts: ls1021a-iot: the SAI2 FIFO is big-endian
+
+Without it the SGTL5000 gets silence and capture returns zeros.
+
+---
+--- a/arch/arm/boot/dts/ls1021a-iot.dts
++++ b/arch/arm/boot/dts/ls1021a-iot.dts
+@@ -371,6 +371,8 @@
+ &sai2 {
+ 	/* the LS1021A SAI registers are big-endian, like the DCU and eDMA */
+ 	big-endian;
++	/* and so is its FIFO data */
++	fsl,big-endian-fifo;
+ 	status = "okay";
+ };
+ 

@@ -1,0 +1,16 @@
+#!/bin/sh /etc/rc.common
+# LS1021A-IoT: only the SGTL5000 line output and input reach a connector
+# (J2, OUT and IN); the codec starts with the line output muted.
+
+START=99
+
+start() {
+	. /lib/functions.sh
+	[ "$(board_name)" = "fsl,ls1021a" ] || return 0
+	command -v amixer >/dev/null || return 0
+
+	amixer -q -c 0 sset Lineout 100% unmute
+	amixer -q -c 0 sset PCM 90%
+	amixer -q -c 0 sset 'Capture Mux' LINE_IN
+	amixer -q -c 0 sset Capture 80%
+}
