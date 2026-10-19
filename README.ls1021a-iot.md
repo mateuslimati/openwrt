@@ -18,6 +18,8 @@ O que a branch acrescenta:
 | `ls1021aiot-cpld: add the Arduino shield reset` | `shield_reset` em sysfs (CPLD 2.10) |
 | `ls1021aiot-kw41z: attach the FRDM-KW41Z as hci0 at boot` | Bluetooth LE pela FRDM-KW41Z no conector Arduino |
 | `spartan-gatt: add a Bluetooth LE GATT server for the LS1021A-IoT` | temperaturas, potência e LED0 pelo celular |
+| `layerscape: ls1021a-iot: audio and HDMI` | SGTL5000 (SAI2) e SiI9022A (DCU) no kernel e no DTS |
+| `layerscape: rtl8366_smi: SPI management for the RTL8365MB` | switch no kernel (swconfig `switch0`) pelo mesmo SPI do `rtlsw` |
 
 ## Compilar
 

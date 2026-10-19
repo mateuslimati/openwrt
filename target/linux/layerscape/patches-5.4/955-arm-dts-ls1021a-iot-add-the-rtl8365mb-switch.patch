@@ -1,0 +1,38 @@
+From: Mateus Lima Alves <mateuslima.ti@gmail.com>
+Subject: [PATCH] arm: dts: ls1021a-iot: add the RTL8365MB switch
+
+Describe the RTL8365MB for the rtl8367b swconfig driver, managed over the
+SPI device on DSPI1 CS1, with the CPU on EXT1 as rtlinit sets it up.
+
+---
+--- a/arch/arm/boot/dts/ls1021a-iot.dts
++++ b/arch/arm/boot/dts/ls1021a-iot.dts
+@@ -103,6 +103,19 @@
+ 		};
+ 	};
+ 
++	/*
++	 * RTL8365MB (RTL8367RB family) managed over the SPI device above,
++	 * which stays a spidev for rtlsw. The CPU is on EXT1: RGMII forced to
++	 * 1000/full, tx delay 1, rx delay 4, as rtlinit configures it.
++	 */
++	switch {
++		compatible = "realtek,rtl8367b";
++		realtek,spi = <&rtl_spi>;
++		cpu_port = <6>;
++		/* txdelay rxdelay mode force txpause rxpause link duplex speed */
++		realtek,extif1 = <1 4 1 1 0 0 1 1 2>;
++	};
++
+ 	firmware {
+ 		optee {
+ 			compatible = "linaro,optee-tz";
+@@ -120,7 +133,7 @@
+ 	bus-num = <0>;
+ 	status = "okay";
+ 
+-	rtl8365mb@1 {
++	rtl_spi: rtl8365mb@1 {
+ 		compatible = "rohm,dh2228fv";
+ 		reg = <1>;
+ 		spi-max-frequency = <1000000>;
