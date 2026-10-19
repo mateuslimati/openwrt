@@ -40,6 +40,23 @@ Resultado:
 silício rev 1.0. Copie só o kernel e o DTB para a partição FAT do cartão e use o U-Boot da
 branch `ls1021aiot` de `github.com/mateuslimati/u-boot`.
 
+## Bootar
+
+Com o U-Boot da branch `ls1021aiot` de `github.com/mateuslimati/u-boot`, copie o kernel e o
+DTB para a partição FAT (por exemplo como `ow2.bin` e `ow2.dtb`) e grave no U-Boot:
+
+```
+setenv fdt_high 0xa0000000
+setenv ow_kernel ow2.bin
+setenv ow_dtb ow2.dtb
+setenv ow_args setenv bootargs console=ttyS0,115200 panic=10
+setenv owboot run ow_args\; mmc dev 0\; fatload mmc 0:1 0x82000000 \${ow_kernel}\; fatload mmc 0:1 0x8f000000 \${ow_dtb}\; bootm 0x82000000 - 0x8f000000
+setenv bootcmd run owboot
+saveenv
+```
+
+Esse U-Boot usa o parser simples: os `\;` e `\$` são necessários.
+
 ## Usar
 
 - LuCI: `https://<ip da eth2>/`. Defina a senha de root no primeiro acesso.
