@@ -1,0 +1,71 @@
+From: Mateus Lima Alves <mateuslima.ti@gmail.com>
+Subject: [PATCH] arm: dts: ls1021a-iot: describe the switch port LEDs
+
+The RJ45 jacks only carry LED0 (green) and LED2 (orange) of switch ports
+0 to 3. Describe them for the rtl8367b driver.
+
+---
+--- a/arch/arm/boot/dts/ls1021a-iot.dts
++++ b/arch/arm/boot/dts/ls1021a-iot.dts
+@@ -114,6 +114,61 @@
+ 		cpu_port = <6>;
+ 		/* txdelay rxdelay mode force txpause rxpause link duplex speed */
+ 		realtek,extif1 = <1 4 1 1 0 0 1 1 2>;
++
++		/*
++		 * The RJ45 jacks (J23: ports 0-1, J24: ports 2-3) only carry
++		 * LED0 (green) and LED2 (orange) of each port; LED1 is not
++		 * connected. Let the CPU drive them.
++		 */
++		leds {
++			green_port0 {
++				label = "rtl8365mb:green:port0";
++				realtek,port = <0>;
++				realtek,led = <0>;
++			};
++
++			orange_port0 {
++				label = "rtl8365mb:orange:port0";
++				realtek,port = <0>;
++				realtek,led = <2>;
++			};
++
++			green_port1 {
++				label = "rtl8365mb:green:port1";
++				realtek,port = <1>;
++				realtek,led = <0>;
++			};
++
++			orange_port1 {
++				label = "rtl8365mb:orange:port1";
++				realtek,port = <1>;
++				realtek,led = <2>;
++			};
++
++			green_port2 {
++				label = "rtl8365mb:green:port2";
++				realtek,port = <2>;
++				realtek,led = <0>;
++			};
++
++			orange_port2 {
++				label = "rtl8365mb:orange:port2";
++				realtek,port = <2>;
++				realtek,led = <2>;
++			};
++
++			green_port3 {
++				label = "rtl8365mb:green:port3";
++				realtek,port = <3>;
++				realtek,led = <0>;
++			};
++
++			orange_port3 {
++				label = "rtl8365mb:orange:port3";
++				realtek,port = <3>;
++				realtek,led = <2>;
++			};
++		};
+ 	};
+ 
+ 	firmware {
