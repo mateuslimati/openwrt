@@ -6,7 +6,10 @@ START=99
 
 start() {
 	. /lib/functions.sh
-	[ "$(board_name)" = "fsl,ls1021a" ] || return 0
+	case "$(board_name)" in
+	fsl,ls1021a|fsl,ls1021a-sdboot) ;;
+	*) return 0 ;;
+	esac
 	command -v amixer >/dev/null || return 0
 
 	amixer -q -c 0 sset Lineout 100% unmute

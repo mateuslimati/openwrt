@@ -5,7 +5,7 @@
 . /lib/functions.sh
 
 case "$(board_name)" in
-fsl,ls1021a)
+fsl,ls1021a|fsl,ls1021a-sdboot)
 	uci -q set dhcp.lan.ignore='1'
 	uci -q commit dhcp
 	;;

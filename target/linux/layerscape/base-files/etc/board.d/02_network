@@ -6,7 +6,7 @@
 board_config_update
 
 case "$(board_name)" in
-	fsl,ls1021a)
+	fsl,ls1021a|fsl,ls1021a-sdboot)
 		# LS1021A-IoT: eth2 is the CPU port of the RTL8365MB switch (EXT1,
 		# port 6, untagged) and joins an existing network, eth0 is the
 		# SGMII port. Describing the switch keeps all its ports in VLAN 1
