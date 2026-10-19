@@ -6,6 +6,12 @@
 board_config_update
 
 case "$(board_name)" in
+	fsl,ls1021a)
+		# LS1021A-IoT: eth2 is the CPU port of the RTL8365MB switch and
+		# joins an existing network, eth0 is the SGMII port.
+		ucidef_set_interface_lan "eth2" "dhcp"
+		ucidef_set_interface_wan "eth0"
+		;;
 	traverse,ls1043v)
 		ucidef_set_interface_lan "eth0 eth1 eth2 eth3"
 		ucidef_set_interface_wan "eth4"

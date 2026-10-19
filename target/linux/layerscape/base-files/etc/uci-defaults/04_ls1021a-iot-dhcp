@@ -1,0 +1,14 @@
+#!/bin/sh
+# LS1021A-IoT: the LAN is a DHCP client on an existing network, so never
+# serve DHCP on it.
+
+. /lib/functions.sh
+
+case "$(board_name)" in
+fsl,ls1021a)
+	uci -q set dhcp.lan.ignore='1'
+	uci -q commit dhcp
+	;;
+esac
+
+exit 0
