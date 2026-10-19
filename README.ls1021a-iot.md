@@ -17,6 +17,7 @@ O que a branch acrescenta:
 | `ls1021aiot-fan: set the fan threshold of the LS1021A-IoT at boot` | ventoinha liga a 65 °C (ADT7461 → CPLD) |
 | `ls1021aiot-cpld: add the Arduino shield reset` | `shield_reset` em sysfs (CPLD 2.10) |
 | `ls1021aiot-kw41z: attach the FRDM-KW41Z as hci0 at boot` | Bluetooth LE pela FRDM-KW41Z no conector Arduino |
+| `spartan-gatt: add a Bluetooth LE GATT server for the LS1021A-IoT` | temperaturas, potência e LED0 pelo celular |
 
 ## Compilar
 
@@ -81,6 +82,18 @@ Esse U-Boot usa o parser simples: os `\;` e `\$` são necessários.
   ```sh
   hcitool -i hci0 lescan
   ```
+
+- GATT (`spartan-gatt`): a placa anuncia como `spartan` e serve, sem pareamento:
+  - Environmental Sensing (0x181A): temperatura do die do LS1021A e da placa (0x2A6E,
+    leitura e notificação);
+  - serviço `7370a000-4c53-3130-3231-412d496f5400`: LED0 (`a001`, UINT8: 0 apaga, 1 acende,
+    2 pisca) e potência de entrada de 12 V em mW (`a002`, leitura e notificação).
+
+  O firmware HCI do KW41Z trava se receber um pacote ACL fora da janela curta que segue cada
+  pacote que ele envia. O servidor manda um comando HCI antes de cada resposta atrasada e de
+  cada notificação, testa o controlador a cada 5 s e, se ele não responder, sai; o init o
+  reinicia, resetando o KW41Z pela CPLD. Ele substitui o `bluetoothd` no `hci0`; desligue com
+  `uci set spartan_gatt.gatt.enabled=0`.
 - Switch:
 
 ```sh

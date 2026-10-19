@@ -1,0 +1,19 @@
+#!/bin/sh
+# Start spartan-gatt, resetting the KW41Z first if it stopped answering.
+
+hci_alive() {
+	local out=/tmp/.spartan-gatt-ping pid
+
+	hcitool -i hci0 cmd 0x04 0x0009 > "$out" 2>&1 &
+	pid=$!
+	sleep 2
+	kill "$pid" 2>/dev/null
+	grep -q 'HCI Event: 0x0e' "$out"
+}
+
+if ! hciconfig hci0 2>/dev/null | grep -q RUNNING || ! hci_alive; then
+	logger -t spartan-gatt "controller not responding, resetting the KW41Z"
+	/etc/init.d/ls1021aiot_kw41z restart
+fi
+
+exec /usr/sbin/spartan-gatt "$@"
