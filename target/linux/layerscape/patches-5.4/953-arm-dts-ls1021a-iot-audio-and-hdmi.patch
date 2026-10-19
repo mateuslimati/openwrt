@@ -1,0 +1,133 @@
+From: Mateus Lima Alves <mateuslima.ti@gmail.com>
+Subject: [PATCH] arm: dts: ls1021a-iot: fix the SGTL5000 and wire the HDMI bridge
+
+The SGTL5000 VDDD comes from the 1.8 V rail and the clocks property had
+a stray cell. The SYS_MCLK stays at 24.576 MHz: playback timing confirms
+it (the 24 MHz of the NXP SDK plays 2.4% fast). The LS1021A SAI is
+big-endian: accessed as little-endian, enabling DMA requests sets its
+software reset bit instead.
+
+Describe the SiI9022A with the mainline sii902x binding and connect it
+to the DCU through an OF graph, so fsl-dcu-drm uses it as its bridge.
+The DCU sync pins need RCW UART_EXT=100 on rev 1.0 silicon, which kills
+the console, so ask the CPLD to rebuild the syncs from DE.
+
+---
+--- a/arch/arm/boot/dts/ls1021a-iot.dts
++++ b/arch/arm/boot/dts/ls1021a-iot.dts
+@@ -31,6 +31,10 @@
+ 		};
+ 	};
+ 
++	/*
++	 * SGTL5000 SYS_MCLK, from the 5P49V5901 clock generator (U21):
++	 * 24.576 MHz, measured by playback time (24 MHz plays 2.4% fast)
++	 */
+ 	sys_mclk: clock-mclk {
+ 		compatible = "fixed-clock";
+ 		#clock-cells = <0>;
+@@ -59,10 +63,20 @@
+ 			regulator-max-microvolt = <2500000>;
+ 			regulator-always-on;
+ 		};
++
++		reg_1p8v: regulator@2 {
++			compatible = "regulator-fixed";
++			reg = <2>;
++			regulator-name = "1P8V";
++			regulator-min-microvolt = <1800000>;
++			regulator-max-microvolt = <1800000>;
++			regulator-always-on;
++		};
+ 	};
+ 
+ 	sound {
+ 		compatible = "simple-audio-card";
++		simple-audio-card,name = "LS1021A-IoT SGTL5000";
+ 		simple-audio-card,format = "i2s";
+ 		simple-audio-card,widgets =
+ 			"Microphone", "Microphone Jack",
+@@ -174,7 +188,8 @@
+ 		reg = <0x2a>;
+ 		VDDA-supply = <&reg_3p3v>;
+ 		VDDIO-supply = <&reg_2p5v>;
+-		clocks = <&sys_mclk 1>;
++		VDDD-supply = <&reg_1p8v>;
++		clocks = <&sys_mclk>;
+ 	};
+ 
+ 	pca9555: pca9555@23 {
+@@ -211,10 +226,20 @@
+ 		reg = <0x4c>;
+ 	};
+ 
+-	hdmi: sii9022a@39 {
+-		compatible = "fsl,sii902x";
++	/*
++	 * The CPLD demuxes the 12-bit DDR DCU bus to the 24-bit input of the
++	 * SiI9022A. Its interrupt reaches IRQ0 through the CPLD; without the
++	 * external IRQ polarity setup in this kernel, poll for hotplug.
++	 */
++	hdmi: hdmi-bridge@39 {
++		compatible = "sil,sii9022";
+ 		reg = <0x39>;
+-		interrupts = <GIC_SPI 163 IRQ_TYPE_EDGE_RISING>;
++
++		port {
++			hdmi_in: endpoint {
++				remote-endpoint = <&dcu_out>;
++			};
++		};
+ 	};
+ };
+ 
+@@ -234,6 +259,8 @@
+ 		reg = <0x0 0x0 0x10000>;
+ 		label = "ls1021aiot:green:led0";
+ 		linux,default-trigger = "timer";	/* 500 ms on, 500 ms off */
++		/* rev 1.0: no DCU sync pins with the console RCW (CPLD 2.11) */
++		fsl,lcd-sync-from-de;
+ 	};
+ };
+ 
+@@ -274,6 +301,8 @@
+ };
+ 
+ &sai2 {
++	/* the LS1021A SAI registers are big-endian, like the DCU and eDMA */
++	big-endian;
+ 	status = "okay";
+ };
+ 
+@@ -286,28 +315,11 @@
+ };
+ 
+ &dcu {
+-	display = <&display>;
+ 	status = "okay";
+ 
+-	display: display@0 {
+-		bits-per-pixel = <24>;
+-
+-		display-timings {
+-			native-mode = <&timing0>;
+-
+-			timing0: mode0 {
+-				clock-frequency = <25000000>;
+-				hactive = <640>;
+-				vactive = <480>;
+-				hback-porch = <80>;
+-				hfront-porch = <80>;
+-				vback-porch = <16>;
+-				vfront-porch = <16>;
+-				hsync-len = <12>;
+-				vsync-len = <2>;
+-				hsync-active = <1>;
+-				vsync-active = <1>;
+-			};
++	port {
++		dcu_out: endpoint {
++			remote-endpoint = <&hdmi_in>;
+ 		};
+ 	};
+ };
