@@ -1,0 +1,32 @@
+#!/bin/sh /etc/rc.common
+# Program the ADT7461 THERM limit that switches the fan through the CPLD.
+
+START=60
+
+adt7461_hwmon() {
+	local h
+	for h in /sys/class/hwmon/hwmon*; do
+		case "$(cat "$h/name" 2>/dev/null)" in
+		adt7461*) echo "$h"; return 0 ;;
+		esac
+	done
+	return 1
+}
+
+start() {
+	local h temp_on hysteresis local_crit
+
+	h=$(adt7461_hwmon) || { logger -t ls1021aiot_fan "ADT7461 not found"; return 1; }
+
+	config_load ls1021aiot_fan
+	config_get temp_on fan temp_on 65
+	config_get hysteresis fan hysteresis 10
+
+	# remote channel (temp2) is the LS1021A die; its THERM output drives the fan
+	echo $((temp_on * 1000)) > "$h/temp2_crit"
+	# the hysteresis register is shared and written relative to the local limit
+	local_crit=$(cat "$h/temp1_crit")
+	echo $((local_crit - hysteresis * 1000)) > "$h/temp1_crit_hyst"
+
+	logger -t ls1021aiot_fan "fan on at ${temp_on} C, off at $((temp_on - hysteresis)) C"
+}
