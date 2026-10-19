@@ -14,6 +14,9 @@ O que a branch acrescenta:
 | `rtlsw: add RTL8365MB switch tool for the LS1021A-IoT` | `rtlsw` + init que liga a porta da CPU no switch |
 | `layerscape: ls1021a-iot: use the switch port as LAN` | LAN = eth2 (switch) como cliente DHCP, sem servidor DHCP |
 | `kernel: add ls1021aiot-cpld LED driver` | LED0 da CPLD como LED do Linux (pisca 1x por segundo) e chaves SW2 em sysfs |
+| `ls1021aiot-fan: set the fan threshold of the LS1021A-IoT at boot` | ventoinha liga a 65 °C (ADT7461 → CPLD) |
+| `ls1021aiot-cpld: add the Arduino shield reset` | `shield_reset` em sysfs (CPLD 2.10) |
+| `ls1021aiot-kw41z: attach the FRDM-KW41Z as hci0 at boot` | Bluetooth LE pela FRDM-KW41Z no conector Arduino |
 
 ## Compilar
 
@@ -65,6 +68,19 @@ Esse U-Boot usa o parser simples: os `\;` e `\$` são necessários.
   `/sys/bus/platform/devices/7fb00000.cpld/dip_switch` (chave em ON lida como 0).
 
 - LuCI: `https://<ip da eth2>/`. Defina a senha de root no primeiro acesso.
+- Ventoinha: liga quando o LS1021A passa de 65 °C e desliga abaixo de 55 °C. Ajuste em
+  `/etc/config/ls1021aiot_fan` e rode `/etc/init.d/ls1021aiot_fan restart`.
+- Bluetooth LE (FRDM-KW41Z com `LS1021aIOT_hci_black_box.bin`): sobe como `hci0` na `ttyS1`
+  (115200, sem controle de fluxo). Na FRDM:
+  - J30/J31 em cruz (J30-1↔J31-2, J30-2↔J31-1): a UART vai para o conector Arduino;
+  - J28/J29 removidos e os pinos J2-3 a J2-6 (D10–D13) isolados: eles são o LED RGB e o SPI do
+    KW41Z e caem no SPI1 do switch;
+  - com a CPLD 2.10, o boot reseta o KW41Z pela CPLD antes do `hciattach`. Com versões
+    anteriores, aperte o reset da FRDM depois do boot.
+
+  ```sh
+  hcitool -i hci0 lescan
+  ```
 - Switch:
 
 ```sh
