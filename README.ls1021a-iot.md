@@ -13,6 +13,7 @@ O que a branch acrescenta:
 | `layerscape: gianfar: no cache snooping when the node is not dma-coherent` | rede estável sob carga no rev 1.0 |
 | `rtlsw: add RTL8365MB switch tool for the LS1021A-IoT` | `rtlsw` + init que liga a porta da CPU no switch |
 | `layerscape: ls1021a-iot: use the switch port as LAN` | LAN = eth2 (switch) como cliente DHCP, sem servidor DHCP |
+| `kernel: add ls1021aiot-cpld LED driver` | LED0 da CPLD como LED do Linux (pisca 1x por segundo) e chaves SW2 em sysfs |
 
 ## Compilar
 
@@ -58,6 +59,10 @@ saveenv
 Esse U-Boot usa o parser simples: os `\;` e `\$` são necessários.
 
 ## Usar
+
+- LED0 da CPLD (precisa da imagem da CPLD 2.9): `/sys/class/leds/ls1021aiot:green:led0`, com
+  trigger `timer` (500 ms aceso, 500 ms apagado) por padrão. As chaves SW2 ficam em
+  `/sys/bus/platform/devices/7fb00000.cpld/dip_switch` (chave em ON lida como 0).
 
 - LuCI: `https://<ip da eth2>/`. Defina a senha de root no primeiro acesso.
 - Switch:
