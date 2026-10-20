@@ -1,0 +1,24 @@
+#!/bin/sh /etc/rc.common
+# LS1021A-IoT: play a sound on the headphones (J2 OUT) at the end of boot.
+# /etc/boot-sound.wav, when present, replaces the built-in chime.
+
+START=99
+
+start() {
+	local wav=/etc/boot-sound.wav
+
+	. /lib/functions.sh
+	case "$(board_name)" in
+	fsl,ls1021a|fsl,ls1021a-sdboot) ;;
+	*) return 0 ;;
+	esac
+	command -v aplay >/dev/null || return 0
+	[ -f "$wav" ] || wav=/usr/share/sounds/boot-chime.wav
+	[ -f "$wav" ] || return 0
+
+	# loud for the boot sound only, then back to the normal PCM level
+	( amixer -q -c 0 sset Lineout 100% unmute
+	  amixer -q -c 0 sset PCM 100%
+	  aplay -q "$wav"
+	  amixer -q -c 0 sset PCM 90% ) </dev/null >/dev/null 2>&1 &
+}
