@@ -1,0 +1,13 @@
+{
+	"admin/status/ls1021aiot": {
+		"title": "LS1021A-IoT",
+		"order": 15,
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/board"
+		},
+		"depends": {
+			"acl": [ "luci-app-ls1021aiot" ]
+		}
+	}
+}

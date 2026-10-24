@@ -1,0 +1,43 @@
+#!/bin/sh
+# Sample the LS1021A-IoT sensors every 10 s into a 24 h ring in /tmp:
+#   time die adt7461 lm75 (m°C) in12_mV in12_mA in12_mW rail1_mV rail1_mA
+#   rail1_mW fan
+
+LOG=/tmp/ls1021aiot/sensors.log
+KEEP=8640
+INTERVAL=10
+
+hwmon() {
+	local h
+	for h in /sys/class/hwmon/hwmon*; do
+		case "$(cat $h/name 2>/dev/null)" in
+		$1*) [ -z "$2" ] || readlink $h/device | grep -q "$2" || continue
+		     echo $h; return 0 ;;
+		esac
+	done
+	return 1
+}
+
+v() { cat "$1" 2>/dev/null || echo 0; }
+
+adt=$(hwmon adt7461)
+lm75=$(hwmon lm75)
+in12=$(hwmon ina2 0-0045)
+rail1=$(hwmon ina2 0-0044)
+
+mkdir -p ${LOG%/*}
+n=$(wc -l < $LOG 2>/dev/null || echo 0)
+while :; do
+	echo "$(date +%s) $(v $adt/temp2_input) $(v $adt/temp1_input)" \
+	     "$(v $lm75/temp1_input) $(v $in12/in1_input) $(v $in12/curr1_input)" \
+	     "$(($(v $in12/power1_input) / 1000)) $(v $rail1/in1_input)" \
+	     "$(v $rail1/curr1_input) $(($(v $rail1/power1_input) / 1000))" \
+	     "$(v $adt/temp2_crit_alarm)" >> $LOG
+	n=$((n + 1))
+	# trim once an hour instead of on every sample
+	if [ $n -gt $((KEEP + 360)) ]; then
+		tail -n $KEEP $LOG > $LOG.new && mv $LOG.new $LOG
+		n=$KEEP
+	fi
+	sleep $INTERVAL
+done

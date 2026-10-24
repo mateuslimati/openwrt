@@ -1,0 +1,145 @@
+#!/bin/sh
+# rpcd plugin of the LS1021A-IoT: sensors, their history and the switch
+# ports.
+#
+#   ubus call ls1021aiot status
+#   ubus call ls1021aiot history '{"points":720,"seconds":86400}'
+#   ubus call ls1021aiot set_port '{"port":2,"on":false}'
+
+. /usr/share/libubox/jshn.sh
+
+LOG=/tmp/ls1021aiot/sensors.log
+
+# switch port and LAN jack, front panel order
+PORTS="3:ETH2 2:ETH3 1:ETH4 0:ETH5"
+
+hwmon() {
+	local h
+	for h in /sys/class/hwmon/hwmon*; do
+		case "$(cat $h/name 2>/dev/null)" in
+		$1*) [ -z "$2" ] || readlink $h/device | grep -q "$2" || continue
+		     echo $h; return 0 ;;
+		esac
+	done
+	return 1
+}
+
+v() { cat "$1" 2>/dev/null || echo 0; }
+
+status() {
+	local adt lm75 in12 rail1 p port jack link
+
+	adt=$(hwmon adt7461)
+	lm75=$(hwmon lm75)
+	in12=$(hwmon ina2 0-0045)
+	rail1=$(hwmon ina2 0-0044)
+
+	json_init
+	json_add_int time "$(date +%s)"
+	json_add_object temp
+	json_add_int die "$(v $adt/temp2_input)"
+	json_add_int adt7461 "$(v $adt/temp1_input)"
+	json_add_int lm75 "$(v $lm75/temp1_input)"
+	json_close_object
+	json_add_object in12
+	json_add_int mv "$(v $in12/in1_input)"
+	json_add_int ma "$(v $in12/curr1_input)"
+	json_add_int mw "$(($(v $in12/power1_input) / 1000))"
+	json_close_object
+	json_add_object rail1
+	json_add_int mv "$(v $rail1/in1_input)"
+	json_add_int ma "$(v $rail1/curr1_input)"
+	json_add_int mw "$(($(v $rail1/power1_input) / 1000))"
+	json_close_object
+	json_add_object fan
+	json_add_boolean on "$(v $adt/temp2_crit_alarm)"
+	json_add_int on_mc "$(v $adt/temp2_crit)"
+	json_add_int off_mc "$(v $adt/temp2_crit_hyst)"
+	json_close_object
+
+	json_add_array ports
+	for p in $PORTS; do
+		port=${p%:*}
+		jack=${p#*:}
+		link=$(swconfig dev switch0 port $port get link 2>/dev/null)
+		json_add_object
+		json_add_int port $port
+		json_add_string jack $jack
+		json_add_boolean disabled \
+			"$(swconfig dev switch0 port $port get disable 2>/dev/null || echo 0)"
+		case "$link" in
+		*link:up*)
+			json_add_boolean link 1
+			link=${link#*speed:}
+			json_add_int speed "${link%%baseT*}"
+			;;
+		*)
+			json_add_boolean link 0
+			;;
+		esac
+		json_close_object
+	done
+	json_close_array
+	json_dump
+}
+
+# rows of the log over the last <seconds>, at most <points> of them
+history() {
+	local points seconds
+
+	json_load "$1"
+	json_get_var points points
+	json_get_var seconds seconds
+	[ -n "$points" ] || points=720
+	[ -n "$seconds" ] || seconds=86400
+
+	[ -f $LOG ] || { echo '{"rows":[]}'; return; }
+	awk -v since=$(($(date +%s) - seconds)) -v points=$points '
+		$1 >= since { row[n++] = $0 }
+		END {
+			step = n > points ? n / points : 1
+			printf "{\"rows\":["
+			for (i = 0; i < n; i += step) {
+				split(row[int(i)], f, " ")
+				printf "%s[%s", (i ? "," : ""), f[1]
+				for (j = 2; j <= 11; j++)
+					printf ",%s", f[j]
+				printf "]"
+			}
+			printf "]}\n"
+		}' $LOG
+}
+
+set_port() {
+	local port on p ok=0
+
+	json_load "$1"
+	json_get_var port port
+	json_get_var on on
+	for p in $PORTS; do
+		[ "${p%:*}" = "$port" ] && ok=1
+	done
+	if [ "$ok" != 1 ] || [ -z "$on" ]; then
+		echo '{"error":"invalid port"}'
+		return
+	fi
+	[ "$on" = 1 ] || on=0
+	swconfig dev switch0 port $port set disable $((!on))
+	logger -t ls1021aiot "LuCI: switch port $port $([ $on = 1 ] && echo on || echo off)"
+	echo "{\"port\":$port,\"on\":$([ $on = 1 ] && echo true || echo false)}"
+}
+
+case "$1" in
+list)
+	echo '{"status":{},"history":{"points":720,"seconds":86400},' \
+	     '"set_port":{"port":0,"on":true}}'
+	;;
+call)
+	read -r input
+	case "$2" in
+	status) status ;;
+	history) history "$input" ;;
+	set_port) set_port "$input" ;;
+	esac
+	;;
+esac
