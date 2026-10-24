@@ -3,6 +3,8 @@
 # ports.
 #
 #   ubus call ls1021aiot status
+#   ubus call ls1021aiot resources
+#   ubus call ls1021aiot control '{"action":"led0","value":"blink"}'
 #   ubus call ls1021aiot history '{"points":720,"seconds":86400}'
 #   ubus call ls1021aiot set_port '{"port":"lan3","on":false}'
 
@@ -25,6 +27,55 @@ hwmon() {
 }
 
 v() { cat "$1" 2>/dev/null || echo 0; }
+
+iio() {
+	local d
+	for d in /sys/bus/iio/devices/iio:device*; do
+		[ "$(cat $d/name 2>/dev/null)" = "$1" ] && { echo $d; return 0; }
+	done
+	return 1
+}
+
+# raw * scale with the precision asked, e.g. scaled 2047 0.5 1
+scaled() {
+	awk -v r="$1" -v s="$2" -v d="$3" 'BEGIN { printf "%." d "f", r * s }'
+}
+
+NVMEM=/sys/bus/nvmem/devices/0-00510/nvmem
+
+# byte i (0-based) of the EEPROM, as two hex digits
+eeprom_hex() {
+	hexdump -v -s "$1" -n "${2:-1}" -e '1/1 "%02x"' $NVMEM 2>/dev/null
+}
+
+# printable text of n bytes at i, up to the first NUL
+eeprom_text() {
+	dd if=$NVMEM bs=1 skip="$1" count="$2" 2>/dev/null | tr -cd ' -~'
+}
+
+# The board EEPROM holds an NXID record (U-Boot sys_eeprom.c): "NXID",
+# serial number (12), errata/revision (5), date (6, BCD YYMMDDhhmmss),
+# version, then at 0x40 the MAC count, a flag and the MAC addresses.
+board_info() {
+	local i n d
+
+	json_add_object board
+	if [ "$(eeprom_text 0 4)" = NXID ]; then
+		json_add_string serial "$(eeprom_text 4 12)"
+		json_add_string revision "$(eeprom_text 16 5)"
+		d=$(eeprom_hex 21 6)
+		json_add_string date "20${d:0:2}-${d:2:2}-${d:4:2} ${d:6:2}:${d:8:2}:${d:10:2}"
+		n=$((0x$(eeprom_hex 64)))
+		json_add_array macs
+		for i in $(seq 0 $((n - 1))); do
+			d=$(eeprom_hex $((66 + 6 * i)) 6)
+			json_add_string "" "${d:0:2}:${d:2:2}:${d:4:2}:${d:6:2}:${d:8:2}:${d:10:2}"
+		done
+		json_close_array
+	fi
+	json_add_string dip_switch "$(cat /sys/bus/platform/devices/*.cpld/dip_switch 2>/dev/null)"
+	json_close_object
+}
 
 status() {
 	local adt lm75 in12 rail1 p port jack link
@@ -84,6 +135,125 @@ status() {
 	json_dump
 }
 
+# the other board devices: EEPROM, accelerometer, ADC and GPIO expander
+resources() {
+	local d s i chip
+
+	json_init
+	board_info
+
+	json_add_object accel
+	d=$(iio mma8451) && {
+		s=$(cat $d/in_accel_scale)
+		for i in x y z; do
+			json_add_string $i "$(scaled $(cat $d/in_accel_${i}_raw) $s 3)"
+		done
+	}
+	json_close_object
+
+	# MAX1239: 12 inputs on J500, mV against its 2.048 V reference
+	json_add_array adc
+	d=$(iio max1239) && {
+		s=$(cat $d/in_voltage_scale)
+		for i in $(seq 0 11); do
+			json_add_int "" "$(scaled $(cat $d/in_voltage${i}_raw) $s 0)"
+		done
+	}
+	json_close_array
+
+	# PCA9555: read its 16 lines, all inputs, without changing them
+	json_add_array gpio
+	chip=$(gpiodetect 2>/dev/null | awk '/\[0-0023\]/ { print $1 }')
+	[ -n "$chip" ] && for i in $(gpioget -c $chip --numeric $(seq 0 15) 2>/dev/null); do
+		json_add_int "" "$i"
+	done
+	json_close_array
+
+	system_info
+
+	json_add_object led0
+	json_add_string mode "$(led0_mode)"
+	json_close_object
+
+	json_add_object bluetooth
+	json_add_boolean up "$(hciconfig hci0 2>/dev/null | grep -q RUNNING && echo 1 || echo 0)"
+	json_add_string central "$(hcitool con 2>/dev/null | awk '/LE/ { print $3; exit }')"
+	json_close_object
+
+	json_dump
+}
+
+LED0=/sys/class/leds/ls1021aiot:green:led0
+SOUNDS="bt-connect bt-disconnect boot-chime boot-sound"
+
+led0_mode() {
+	if grep -q '\[timer\]' $LED0/trigger 2>/dev/null; then
+		echo blink
+	elif [ "$(cat $LED0/brightness 2>/dev/null)" = 0 ]; then
+		echo off
+	else
+		echo on
+	fi
+}
+
+system_info() {
+	local soc=/sys/bus/soc/devices/soc0 cpu=/sys/devices/system/cpu/cpu0/cpufreq
+
+	json_add_object system
+	json_add_string machine "$(cat $soc/machine 2>/dev/null)"
+	json_add_string family "$(cat $soc/family 2>/dev/null)"
+	json_add_string soc_id "$(cat $soc/soc_id 2>/dev/null)"
+	json_add_string revision "$(cat $soc/revision 2>/dev/null)"
+	json_add_int cpus "$(grep -c ^processor /proc/cpuinfo)"
+	json_add_int cpu_mhz "$(($(v $cpu/scaling_cur_freq) / 1000))"
+	json_add_int mem_total_kb "$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo)"
+	json_add_int mem_avail_kb "$(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo)"
+	json_add_string load "$(cut -d' ' -f1-3 /proc/loadavg)"
+	json_add_int uptime "$(cut -d. -f1 /proc/uptime)"
+	json_add_string kernel "$(uname -r)"
+	json_close_object
+}
+
+# actions on the board: led0 off/on/blink, shield_reset, sound <name>
+control() {
+	local action value ok=1
+
+	json_load "$1"
+	json_get_var action action
+	json_get_var value value
+
+	case "$action" in
+	led0)
+		case "$value" in
+		blink) echo timer > $LED0/trigger ;;
+		on|off)
+			echo none > $LED0/trigger
+			echo $([ $value = on ] && echo 1 || echo 0) > $LED0/brightness ;;
+		*) ok=0 ;;
+		esac ;;
+	shield_reset)
+		echo pulse > $(ls /sys/bus/platform/devices/*.cpld/shield_reset) ;;
+	sound)
+		case " $SOUNDS " in
+		*" $value "*)
+			if [ $value = boot-sound ]; then
+				( aplay -q /etc/boot-sound.wav ) </dev/null >/dev/null 2>&1 &
+			else
+				ls1021a-iot-sound "$value"
+			fi ;;
+		*) ok=0 ;;
+		esac ;;
+	*) ok=0 ;;
+	esac
+
+	if [ $ok = 1 ]; then
+		logger -t ls1021aiot "LuCI: $action $value"
+		echo '{"ok":true}'
+	else
+		echo '{"error":"invalid action"}'
+	fi
+}
+
 # rows of the log over the last <seconds>, at most <points> of them
 history() {
 	local points seconds
@@ -132,13 +302,16 @@ set_port() {
 
 case "$1" in
 list)
-	echo '{"status":{},"history":{"points":720,"seconds":86400},' \
-	     '"set_port":{"port":"lan2","on":true}}'
+	echo '{"status":{},"resources":{},"history":{"points":720,"seconds":86400},' \
+	     '"set_port":{"port":"lan2","on":true},' \
+	     '"control":{"action":"led0","value":"blink"}}'
 	;;
 call)
 	read -r input
 	case "$2" in
 	status) status ;;
+	resources) resources ;;
+	control) control "$input" ;;
 	history) history "$input" ;;
 	set_port) set_port "$input" ;;
 	esac

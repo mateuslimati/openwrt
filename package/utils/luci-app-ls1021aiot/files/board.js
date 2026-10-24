@@ -14,6 +14,17 @@ var callStatus = rpc.declare({
 	method: 'status'
 });
 
+var callResources = rpc.declare({
+	object: 'ls1021aiot',
+	method: 'resources'
+});
+
+var callControl = rpc.declare({
+	object: 'ls1021aiot',
+	method: 'control',
+	params: [ 'action', 'value' ]
+});
+
 var callHistory = rpc.declare({
 	object: 'ls1021aiot',
 	method: 'history',
@@ -187,8 +198,13 @@ return view.extend({
 	load: function() {
 		return Promise.all([
 			L.resolveDefault(callStatus(), null),
-			L.resolveDefault(callHistory(720, this.seconds), [])
+			L.resolveDefault(callHistory(720, this.seconds), []),
+			L.resolveDefault(callResources(), null)
 		]);
+	},
+
+	handleControl: function(action, value, ev) {
+		return callControl(action, value).then(L.bind(this.refresh, this));
 	},
 
 	handlePort: function(port, on, ev) {
@@ -257,6 +273,125 @@ return view.extend({
 		})));
 	},
 
+	renderTable: function(rows) {
+		return E('table', { 'class': 'table' }, rows.map(function(r) {
+			return E('tr', { 'class': 'tr' }, [
+				E('td', { 'class': 'td left', 'width': '33%' }, r[0]),
+				E('td', { 'class': 'td left' }, E('strong', {}, r[1]))
+			]);
+		}));
+	},
+
+	renderBoard: function(res) {
+		var b = res.board || {}, sys = res.system || {}, rows = [];
+		var uptime = sys.uptime || 0;
+
+		if (b.serial)
+			rows.push([ 'Número de série', b.serial ],
+				  [ 'Revisão da placa', b.revision ],
+				  [ 'Fabricação', b.date ],
+				  [ 'MACs (EEPROM)', (b.macs || []).join(', ') ]);
+
+		/* SW2: a switch ON reads 0 */
+		if (b.dip_switch) {
+			var v = parseInt(b.dip_switch, 16), sw = [];
+			for (var i = 0; i < 5; i++)
+				sw.push((i + 1) + ':' + (v & (1 << i) ? 'off' : 'ON'));
+			rows.push([ 'Chaves SW2', sw.join('  ') + ' (' + b.dip_switch + ')' ]);
+		}
+
+		rows.push([ 'SoC', '%s, revisão %s (%s)'.format(sys.family, sys.revision, sys.soc_id) ],
+			  [ 'CPU', '%d núcleos Cortex-A7 a %d MHz'.format(sys.cpus, sys.cpu_mhz) ],
+			  [ 'Memória', '%d MiB livres de %d MiB'.format(sys.mem_avail_kb / 1024,
+									 sys.mem_total_kb / 1024) ],
+			  [ 'Carga', sys.load ],
+			  [ 'Ligada há', '%dd %02dh%02dm'.format(uptime / 86400, uptime / 3600 % 24,
+								  uptime / 60 % 60) ],
+			  [ 'Kernel', sys.kernel ]);
+
+		return this.renderTable(rows);
+	},
+
+	renderAccel: function(res) {
+		var a = res.accel || {};
+
+		if (a.x == null || a.x === '')
+			return E('p', {}, 'Acelerômetro sem resposta.');
+
+		var x = +a.x, y = +a.y, z = +a.z, g = 9.80665;
+		var deg = function(r) { return (r * 180 / Math.PI).toFixed(1) + '°'; };
+
+		return this.renderTable([
+			[ 'X, Y, Z', '%.2f, %.2f, %.2f m/s² (%.2f, %.2f, %.2f g)'.format(x, y, z,
+				x / g, y / g, z / g) ],
+			[ 'Inclinação', 'frente/trás %s, lateral %s'.format(
+				deg(Math.atan2(x, Math.sqrt(y * y + z * z))),
+				deg(Math.atan2(y, Math.sqrt(x * x + z * z)))) ],
+			[ 'Módulo', '%.2f g'.format(Math.sqrt(x * x + y * y + z * z) / g) ]
+		]);
+	},
+
+	renderAdc: function(res) {
+		var adc = res.adc || [];
+
+		if (!adc.length)
+			return E('p', {}, 'ADC sem resposta.');
+
+		return E('table', { 'class': 'table' }, [
+			E('tr', { 'class': 'tr table-titles' }, adc.map(function(v, i) {
+				return E('th', { 'class': 'th center' }, 'AIN' + i);
+			})),
+			E('tr', { 'class': 'tr' }, adc.map(function(v) {
+				return E('td', { 'class': 'td center' }, v >= 2048 ? '≥ 2048' : v);
+			}))
+		]);
+	},
+
+	renderGpio: function(res) {
+		var gpio = res.gpio || [];
+
+		if (!gpio.length)
+			return E('p', {}, 'PCA9555 sem resposta.');
+
+		return E('table', { 'class': 'table' }, [
+			E('tr', { 'class': 'tr table-titles' }, gpio.map(function(v, i) {
+				return E('th', { 'class': 'th center' }, (i < 8 ? 'P0.' : 'P1.') + (i % 8));
+			})),
+			E('tr', { 'class': 'tr' }, gpio.map(function(v) {
+				return E('td', { 'class': 'td center' }, v ? '1' : '0');
+			}))
+		]);
+	},
+
+	renderControls: function(res) {
+		var self = this, led = (res.led0 || {}).mode, bt = res.bluetooth || {};
+		var btn = function(label, action, value, active) {
+			return E('button', {
+				'class': 'btn cbi-button' + (active ? ' cbi-button-positive' : ''),
+				'click': ui.createHandlerFn(self, 'handleControl', action, value)
+			}, label);
+		};
+		var row = function(label, items) {
+			return E('tr', { 'class': 'tr' }, [
+				E('td', { 'class': 'td left', 'width': '33%' }, label),
+				E('td', { 'class': 'td left' },
+				  E('div', { 'style': 'display:flex;flex-wrap:wrap;gap:.5em' }, items))
+			]);
+		};
+
+		return E('table', { 'class': 'table' }, [
+			row('LED0 (CPLD)', [ btn('Apagado', 'led0', 'off', led == 'off'),
+					     btn('Aceso', 'led0', 'on', led == 'on'),
+					     btn('Piscando', 'led0', 'blink', led == 'blink') ]),
+			row('Sons (saída J2)', [ btn('Boot', 'sound', 'boot-sound'),
+						 btn('Conexão BLE', 'sound', 'bt-connect'),
+						 btn('Desconexão BLE', 'sound', 'bt-disconnect') ]),
+			row('Shield Arduino', [ btn('Resetar (KW41Z)', 'shield_reset', '') ]),
+			row('Bluetooth', [ E('strong', {}, !bt.up ? 'hci0 parado' :
+				(bt.central ? 'conectado a ' + bt.central : 'anunciando como "spartan"')) ])
+		]);
+	},
+
 	renderCharts: function(rows) {
 		var last = rows.length ? rows[rows.length - 1] : null, seconds = this.seconds;
 
@@ -270,9 +405,16 @@ return view.extend({
 		}));
 	},
 
-	update: function(st, rows) {
+	update: function(st, rows, res) {
 		var view = this.node;
 
+		if (res) {
+			view.querySelector('#board').replaceChildren(this.renderBoard(res));
+			view.querySelector('#controls').replaceChildren(this.renderControls(res));
+			view.querySelector('#accel').replaceChildren(this.renderAccel(res));
+			view.querySelector('#adc').replaceChildren(this.renderAdc(res));
+			view.querySelector('#gpio').replaceChildren(this.renderGpio(res));
+		}
 		view.querySelector('#status').replaceChildren(this.renderStatus(st));
 		view.querySelector('#ports').replaceChildren(this.renderPorts(st));
 		view.querySelector('#charts').replaceChildren(this.renderCharts(rows));
@@ -281,9 +423,10 @@ return view.extend({
 	refresh: function() {
 		return Promise.all([
 			L.resolveDefault(callStatus(), null),
-			L.resolveDefault(callHistory(720, this.seconds), [])
+			L.resolveDefault(callHistory(720, this.seconds), []),
+			L.resolveDefault(callResources(), null)
 		]).then(L.bind(function(data) {
-			this.update(data[0], data[1]);
+			this.update(data[0], data[1], data[2]);
 		}, this));
 	},
 
@@ -304,8 +447,28 @@ return view.extend({
 		var node = E('div', { 'id': 'ls1021aiot' }, [
 			E('h2', {}, 'LS1021A-IoT'),
 			E('div', { 'class': 'cbi-section' }, [
+				E('h3', {}, 'Placa e sistema'),
+				E('div', { 'id': 'board' })
+			]),
+			E('div', { 'class': 'cbi-section' }, [
+				E('h3', {}, 'Controles'),
+				E('div', { 'id': 'controls' })
+			]),
+			E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, 'Sensores'),
 				E('div', { 'id': 'status' })
+			]),
+			E('div', { 'class': 'cbi-section' }, [
+				E('h3', {}, 'Acelerômetro (MMA8451Q)'),
+				E('div', { 'id': 'accel' })
+			]),
+			E('div', { 'class': 'cbi-section' }, [
+				E('h3', {}, 'Entradas analógicas do J500 (MAX1239, mV, referência 2,048 V)'),
+				E('div', { 'id': 'adc' })
+			]),
+			E('div', { 'class': 'cbi-section' }, [
+				E('h3', {}, 'GPIO do PCA9555 (só leitura, todas entradas)'),
+				E('div', { 'id': 'gpio' })
 			]),
 			E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, 'Portas do switch'),
@@ -331,7 +494,7 @@ return view.extend({
 					this.appendChild(arguments[i]);
 			};
 
-		this.update(data[0], data[1]);
+		this.update(data[0], data[1], data[2]);
 		poll.add(L.bind(this.refresh, this), 10);
 
 		return node;

@@ -1,0 +1,35 @@
+From: Mateus Lima Alves <mateuslima.ti@gmail.com>
+Subject: [PATCH] ARM: dts: ls1021a-iot: add the accelerometer and the board EEPROM
+
+Describe the MMA8451Q accelerometer at 0x1c and the board EEPROM at 0x51,
+which holds the NXID record of the board (serial number, revision,
+manufacturing date and eTSEC MAC addresses), read-only from Linux.
+
+Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
+---
+--- a/arch/arm/boot/dts/nxp/ls/ls1021a-iot.dts
++++ b/arch/arm/boot/dts/nxp/ls/ls1021a-iot.dts
+@@ -368,6 +368,23 @@
+ 		compatible = "adi,adt7461a";
+ 		reg = <0x4c>;
+ 	};
++
++	/* 3-axis accelerometer (U18) */
++	accelerometer@1c {
++		compatible = "fsl,mma8451";
++		reg = <0x1c>;
++	};
++
++	/*
++	 * Board EEPROM (U501), 16-bit addressing: the NXID record with the
++	 * serial number, revision, date and the eTSEC MAC addresses that
++	 * U-Boot uses. Never written from Linux.
++	 */
++	eeprom@51 {
++		compatible = "atmel,24c32";
++		reg = <0x51>;
++		read-only;
++	};
+ };
+ 
+ &ifc {

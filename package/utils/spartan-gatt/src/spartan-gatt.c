@@ -17,7 +17,9 @@
  *      30 fan, on while the ADT7461 THERM output is asserted
  *      40-43 switch ports ETH2-ETH5, write 0/1 (or off/on) to power the
  *            PHY down or up
- *    10-43 notify, when the value changes
+ *      50 acceleration X Y Z in g (MMA8451Q)
+ *      60 board serial number and revision, from the EEPROM
+ *    10-60 notify, when the value changes
  *
  * It owns the LE ATT channel, so bluetoothd must not be running. It
  * advertises as connectable, serves one central and exits when it
@@ -109,7 +111,9 @@ enum {
 	N_RAIL = N_TEMP + 3,		/* 2 INA220 */
 	N_FAN = N_RAIL + 2,
 	N_PORT,				/* 4 switch ports */
-	N_MAX = N_PORT + 4
+	N_ACCEL = N_PORT + 4,
+	N_BOARD,
+	N_MAX
 };
 
 struct server {
@@ -117,7 +121,7 @@ struct server {
 	struct gatt_db *db;
 	struct bt_gatt_server *gatt;
 	struct notifier notify[N_MAX];
-	char summary[512];
+	char summary[768];
 	size_t summary_len;
 	uint16_t svc_chngd_handle;
 	bool svc_chngd_sent;
@@ -403,6 +407,124 @@ static bool led_text(int i, char *buf, size_t *len)
 	return true;
 }
 
+/* the IIO device with this name, such as "mma8451" */
+static bool iio_find(const char *name, char *path, size_t len)
+{
+	char buf[PATH_MAX], dev[32];
+	struct dirent *de;
+	bool found = false;
+	FILE *f;
+	DIR *d;
+
+	d = opendir("/sys/bus/iio/devices");
+	if (!d)
+		return false;
+
+	while (!found && (de = readdir(d))) {
+		if (strncmp(de->d_name, "iio:device", 10))
+			continue;
+		snprintf(buf, sizeof(buf), "/sys/bus/iio/devices/%s/name",
+			 de->d_name);
+		f = fopen(buf, "r");
+		if (!f)
+			continue;
+		if (fgets(dev, sizeof(dev), f) &&
+		    !strncmp(dev, name, strlen(name))) {
+			snprintf(path, len, "/sys/bus/iio/devices/%s",
+				 de->d_name);
+			found = true;
+		}
+		fclose(f);
+	}
+
+	closedir(d);
+	return found;
+}
+
+static bool read_double(const char *dir, const char *attr, double *val)
+{
+	char path[PATH_MAX];
+	FILE *f;
+	bool ok;
+
+	snprintf(path, sizeof(path), "%s/%s", dir, attr);
+	f = fopen(path, "r");
+	if (!f)
+		return false;
+	ok = fscanf(f, "%lf", val) == 1;
+	fclose(f);
+	return ok;
+}
+
+/* MMA8451Q acceleration in g */
+static bool accel_text(int i, char *buf, size_t *len)
+{
+	static const char * const axis[] = { "in_accel_x_raw",
+					     "in_accel_y_raw",
+					     "in_accel_z_raw" };
+	char dir[PATH_MAX];
+	double scale, raw, g[3];
+	int a;
+
+	if (!iio_find("mma8451", dir, sizeof(dir)) ||
+	    !read_double(dir, "in_accel_scale", &scale))
+		return false;
+	for (a = 0; a < 3; a++) {
+		if (!read_double(dir, axis[a], &raw))
+			return false;
+		g[a] = raw * scale / 9.80665;
+	}
+	*len = snprintf(buf, TEXT_MAX, "%.2f %.2f %.2f g", g[0], g[1], g[2]);
+	return true;
+}
+
+/*
+ * The NXID record of the board EEPROM (U-Boot sys_eeprom.c): "NXID", the
+ * serial number (12 bytes), errata/revision (5), date (6, BCD YYMMDDhhmmss)
+ */
+#define NVMEM_PATH	"/sys/bus/nvmem/devices/0-00510/nvmem"
+
+struct board_id {
+	char serial[13];
+	char revision[6];
+	char date[11];
+};
+
+static bool board_id(struct board_id *id)
+{
+	unsigned char e[27];
+	FILE *f;
+	bool ok;
+
+	f = fopen(NVMEM_PATH, "rb");
+	if (!f)
+		return false;
+	ok = fread(e, 1, sizeof(e), f) == sizeof(e) && !memcmp(e, "NXID", 4);
+	fclose(f);
+	if (!ok)
+		return false;
+
+	memcpy(id->serial, e + 4, 12);
+	id->serial[12] = '\0';
+	memcpy(id->revision, e + 16, 5);
+	id->revision[5] = '\0';
+	snprintf(id->date, sizeof(id->date), "20%02x-%02x-%02x", e[21], e[22],
+		 e[23]);
+	return true;
+}
+
+static bool board_text(int i, char *buf, size_t *len)
+{
+	struct board_id id;
+
+	if (!board_id(&id))
+		return false;
+	*len = snprintf(buf, TEXT_MAX, "%s rev %s", id.serial, id.revision);
+	if (*len >= TEXT_MAX)
+		*len = TEXT_MAX - 1;
+	return true;
+}
+
 /* everything in one text, read with Read Blob when it exceeds the MTU */
 static void build_summary(struct server *server)
 {
@@ -424,6 +546,25 @@ static void build_summary(struct server *server)
 	for (i = 0; i < ARRAY_SIZE(ports); i++)
 		ADD("Porta %s: %s\n", ports[i].jack, VAL(port_text, i));
 	ADD("LED0: %s\n", VAL(led_text, 0));
+	ADD("Acelera\xc3\xa7\xc3\xa3o: %s\n", VAL(accel_text, 0));
+	{
+		struct board_id id;
+		FILE *f;
+		long dip;
+
+		if (board_id(&id))
+			ADD("Placa: %s, revis\xc3\xa3o %s, fabricada em %s\n",
+			    id.serial, id.revision, id.date);
+		/* "0x1f": a switch ON reads 0 */
+		f = fopen("/sys/bus/platform/devices/7fb00000.cpld/dip_switch",
+			  "r");
+		if (f) {
+			if (fscanf(f, "%li", &dip) == 1)
+				ADD("Chaves SW2: 0x%02lx (ligada l\xc3\xaa 0)\n",
+				    dip);
+			fclose(f);
+		}
+	}
 
 #undef VAL
 #undef ADD
@@ -978,6 +1119,12 @@ static void populate_db(struct server *server)
 			      i, ports[i].jack, desc, port_text,
 			      port_write_cb);
 	}
+	add_text_chrc(server, service, UUID_STR(0x50), N_ACCEL, 0,
+		      "Acelera\xc3\xa7\xc3\xa3o",
+		      "Acelera\xc3\xa7\xc3\xa3o X Y Z (MMA8451Q)", accel_text, NULL);
+	add_text_chrc(server, service, UUID_STR(0x60), N_BOARD, 0, "Placa",
+		      "Placa: n\xc3\xbamero de s\xc3\xa9rie e revis\xc3\xa3o (EEPROM)",
+		      board_text, NULL);
 
 #undef UUID_STR
 	gatt_db_service_set_active(service, true);
