@@ -14,7 +14,8 @@
  *
  * It owns the LE ATT channel, so bluetoothd must not be running. It
  * advertises as connectable, serves one central and exits when it
- * disconnects; the init script respawns it.
+ * disconnects; the init script respawns it. With -e, it runs a program
+ * as "<program> connected <address>" and "<program> disconnected".
  */
 
 #define _GNU_SOURCE
@@ -29,6 +30,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <poll.h>
+#include <signal.h>
 #include <sys/ioctl.h>
 
 #include "lib/bluetooth.h"
@@ -63,6 +65,8 @@
 static const char *dev_name = "spartan";
 static bool verbose;
 static int kick_dd = -1;
+static const char *event_prog;
+static bool connected;
 
 struct notifier {
 	uint16_t handle;
@@ -80,6 +84,26 @@ struct server {
 	unsigned int timeout_id;
 	unsigned int ping_id;
 };
+
+/* event program, run in the background */
+
+static void event(const char *what, const char *arg)
+{
+	if (!event_prog)
+		return;
+	if (!strcmp(what, "disconnected")) {
+		if (!connected)
+			return;
+		connected = false;
+	}
+	if (fork() == 0) {
+		/* do not keep the HCI and L2CAP sockets open */
+		for (int fd = 3; fd < 1024; fd++)
+			close(fd);
+		execl(event_prog, event_prog, what, arg, (char *) NULL);
+		_exit(127);
+	}
+}
 
 /* hwmon */
 
@@ -211,6 +235,7 @@ static void kick(void)
 
 	if (kick_dd >= 0 && hci_read_bd_addr(kick_dd, &ba, 1000) < 0) {
 		fprintf(stderr, "controller not responding\n");
+		event("disconnected", NULL);
 		exit(2);
 	}
 }
@@ -220,6 +245,7 @@ static void kick(void)
 static void att_disconnect_cb(int err, void *user_data)
 {
 	printf("disconnected: %s\n", strerror(err));
+	event("disconnected", NULL);
 	mainloop_quit();
 }
 
@@ -672,7 +698,7 @@ static int att_listen(const bdaddr_t *src)
 
 static void usage(void)
 {
-	printf("Usage: spartan-gatt [-i hciX] [-n name] [-v]\n");
+	printf("Usage: spartan-gatt [-i hciX] [-n name] [-e program] [-v]\n");
 }
 
 int main(int argc, char *argv[])
@@ -684,7 +710,7 @@ int main(int argc, char *argv[])
 	bdaddr_t src;
 	char ba[18];
 
-	while ((opt = getopt(argc, argv, "hi:n:v")) != -1) {
+	while ((opt = getopt(argc, argv, "he:i:n:v")) != -1) {
 		switch (opt) {
 		case 'i':
 			dev_id = hci_devid(optarg);
@@ -695,6 +721,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'n':
 			dev_name = optarg;
+			break;
+		case 'e':
+			event_prog = optarg;
 			break;
 		case 'v':
 			verbose = true;
@@ -715,6 +744,8 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 
 	setvbuf(stdout, NULL, _IOLBF, 0);
+	/* event children are not waited for */
+	signal(SIGCHLD, SIG_IGN);
 
 	/*
 	 * The controller refuses to advertise while the previous central is
@@ -763,6 +794,8 @@ int main(int argc, char *argv[])
 	close(lsk);
 	ba2str(&addr.l2_bdaddr, ba);
 	printf("connected: %s\n", ba);
+	connected = true;
+	event("connected", ba);
 
 	mainloop_init();
 	server = server_create(fd);
