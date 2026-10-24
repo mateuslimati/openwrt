@@ -1,12 +1,18 @@
 From: Mateus Lima Alves <mateuslima.ti@gmail.com>
 Subject: [PATCH] net: dsa: realtek: rtl8365mb: add port LED support
 
-Each port drives up to three LEDs, one per LED group, which the CPU can
-force on or off over their hardware mode: two bits per port in the CPU
-force LED registers from 0x1B08. Register every LED described under the
-leds node of a port as a LED class device driven that way, so it can
-follow any trigger, such as the netdev trigger of its port, like
-rtl8366rb does. LEDs that are not described keep their hardware mode.
+Each port drives up to three LEDs, one per LED group. A LED follows the
+hardware mode of its group, set in the LED configuration register and
+shared by all ports, or is forced on or off by the CPU through the CPU
+force LED registers from 0x1B08.
+
+Register every LED described under the leds node of a port as a LED
+class device: set from software it is forced on or off, and the netdev
+trigger modes that a group mode implements, such as tx/rx (activity) or
+link and tx/rx, are offloaded to the hardware, as long as the other
+offloaded LEDs of the group use the same mode. Offloaded, the LED also
+shows the traffic switched between ports, which never reaches the CPU.
+LEDs that are not described keep their hardware mode.
 
 Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
 ---
@@ -36,23 +42,27 @@ Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
 +endif
 --- /dev/null
 +++ b/drivers/net/dsa/realtek/rtl8365mb_leds.c
-@@ -0,0 +1,142 @@
+@@ -0,0 +1,338 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/* Port LEDs of the rtl8365mb switch family
 + *
-+ * Each port drives up to three LEDs, one per LED group. The CPU can force
-+ * the LEDs of a port in a group on or off, overriding the mode that the LED
-+ * configuration registers select: two bits per port, packed eight ports to
-+ * a register. This driver registers every LED described in the device tree
-+ * as a LED class device driven that way, so it can follow any trigger, such
-+ * as the netdev trigger of its port. LEDs that are not described keep their
-+ * hardware mode.
++ * Each port drives up to three LEDs, one per LED group. A LED either
++ * follows the hardware mode of its group, which the switch updates on its
++ * own for every frame it forwards, or is forced on or off by the CPU: two
++ * bits per port, packed eight ports to a register.
++ *
++ * Every LED described in the device tree becomes a LED class device. Set
++ * from software, it is forced on or off; with the netdev trigger, modes
++ * that the hardware supports are offloaded to the group mode, so that the
++ * LED also shows the traffic switched between ports, which never reaches
++ * the CPU. LEDs that are not described keep their hardware mode.
 + *
 + * Copyright (C) 2026 Mateus Lima Alves <mateuslima.ti@gmail.com>
 + */
 +
 +#include <linux/bitfield.h>
 +#include <linux/leds.h>
++#include <linux/mutex.h>
 +#include <linux/property.h>
 +#include <linux/regmap.h>
 +#include <net/dsa.h>
@@ -61,6 +71,22 @@ Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
 +#include "rtl8365mb_leds.h"
 +
 +#define RTL8365MB_NUM_LED_GROUPS		3
++
++/* Hardware mode of each LED group, shared by all ports */
++#define RTL8365MB_LED_CONFIG_REG		0x1B03
++#define   RTL8365MB_LED_CONFIG_SEL_MASK		BIT(14)
++#define   RTL8365MB_LED_CONFIG_MASK(_group)	(0xF << ((_group) * 4))
++#define RTL8365MB_LED_MODE_LINK_ACT		2
++#define RTL8365MB_LED_MODE_SPD1000		3
++#define RTL8365MB_LED_MODE_SPD100		4
++#define RTL8365MB_LED_MODE_SPD10		5
++#define RTL8365MB_LED_MODE_SPD1000ACT		6
++#define RTL8365MB_LED_MODE_SPD100ACT		7
++#define RTL8365MB_LED_MODE_SPD10ACT		8
++#define RTL8365MB_LED_MODE_SPD10010ACT		9
++#define RTL8365MB_LED_MODE_LINKRX		12
++#define RTL8365MB_LED_MODE_LINKTX		13
++#define RTL8365MB_LED_MODE_ACT			15
 +
 +/* CPU force mode of the LED of a port in a group, 2 bits per port */
 +#define RTL8365MB_CPU_FORCE_LED_REG(_group, _port) \
@@ -71,9 +97,42 @@ Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
 +#define   RTL8365MB_CPU_FORCE_LED_OFF		2
 +#define   RTL8365MB_CPU_FORCE_LED_ON		3
 +
++#define LINK_ANY	BIT(TRIGGER_NETDEV_LINK)
++#define LINK_10		BIT(TRIGGER_NETDEV_LINK_10)
++#define LINK_100	BIT(TRIGGER_NETDEV_LINK_100)
++#define LINK_1000	BIT(TRIGGER_NETDEV_LINK_1000)
++#define TX		BIT(TRIGGER_NETDEV_TX)
++#define RX		BIT(TRIGGER_NETDEV_RX)
++
++/* netdev trigger modes that a group mode implements */
++static const struct {
++	unsigned long flags;
++	u32 mode;
++} rtl8365mb_led_modes[] = {
++	{ LINK_ANY | TX | RX,		RTL8365MB_LED_MODE_LINK_ACT },
++	{ LINK_ANY | RX,		RTL8365MB_LED_MODE_LINKRX },
++	{ LINK_ANY | TX,		RTL8365MB_LED_MODE_LINKTX },
++	{ TX | RX,			RTL8365MB_LED_MODE_ACT },
++	{ LINK_1000,			RTL8365MB_LED_MODE_SPD1000 },
++	{ LINK_100,			RTL8365MB_LED_MODE_SPD100 },
++	{ LINK_10,			RTL8365MB_LED_MODE_SPD10 },
++	{ LINK_1000 | TX | RX,		RTL8365MB_LED_MODE_SPD1000ACT },
++	{ LINK_100 | TX | RX,		RTL8365MB_LED_MODE_SPD100ACT },
++	{ LINK_10 | TX | RX,		RTL8365MB_LED_MODE_SPD10ACT },
++	{ LINK_10 | LINK_100 | TX | RX,	RTL8365MB_LED_MODE_SPD10010ACT },
++};
++
++/* the group modes in use, one hardware mode per group for all its ports */
++struct rtl8365mb_leds {
++	struct mutex lock;
++	u32 mode[RTL8365MB_NUM_LED_GROUPS];
++	u32 hw_ports[RTL8365MB_NUM_LED_GROUPS];
++};
++
 +struct rtl8365mb_led {
 +	struct led_classdev cdev;
 +	struct realtek_priv *priv;
++	struct rtl8365mb_leds *leds;
 +	int port;
 +	u32 group;
 +};
@@ -93,13 +152,138 @@ Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
 +{
 +	struct rtl8365mb_led *led = container_of(cdev, struct rtl8365mb_led,
 +						 cdev);
++	int ret;
 +
-+	return rtl8365mb_led_force(led, brightness ?
-+				   RTL8365MB_CPU_FORCE_LED_ON :
-+				   RTL8365MB_CPU_FORCE_LED_OFF);
++	mutex_lock(&led->leds->lock);
++	led->leds->hw_ports[led->group] &= ~BIT(led->port);
++	ret = rtl8365mb_led_force(led, brightness ?
++				  RTL8365MB_CPU_FORCE_LED_ON :
++				  RTL8365MB_CPU_FORCE_LED_OFF);
++	mutex_unlock(&led->leds->lock);
++
++	return ret;
 +}
 +
-+static int rtl8365mb_setup_led(struct realtek_priv *priv, struct dsa_port *dp,
++#if IS_ENABLED(CONFIG_LEDS_TRIGGERS)
++static int rtl8365mb_led_flags_to_mode(unsigned long flags, u32 *mode)
++{
++	int i;
++
++	for (i = 0; i < ARRAY_SIZE(rtl8365mb_led_modes); i++) {
++		if (rtl8365mb_led_modes[i].flags == flags) {
++			*mode = rtl8365mb_led_modes[i].mode;
++			return 0;
++		}
++	}
++
++	return -EOPNOTSUPP;
++}
++
++static int rtl8365mb_led_hw_control_is_supported(struct led_classdev *cdev,
++						 unsigned long flags)
++{
++	struct rtl8365mb_led *led = container_of(cdev, struct rtl8365mb_led,
++						 cdev);
++	struct rtl8365mb_leds *leds = led->leds;
++	u32 mode;
++	int ret;
++
++	ret = rtl8365mb_led_flags_to_mode(flags, &mode);
++	if (ret)
++		return ret;
++
++	/* the other ports of the group must not use another mode */
++	mutex_lock(&leds->lock);
++	if (leds->hw_ports[led->group] & ~BIT(led->port) &&
++	    leds->mode[led->group] != mode)
++		ret = -EOPNOTSUPP;
++	mutex_unlock(&leds->lock);
++
++	return ret;
++}
++
++static int rtl8365mb_led_hw_control_set(struct led_classdev *cdev,
++					unsigned long flags)
++{
++	struct rtl8365mb_led *led = container_of(cdev, struct rtl8365mb_led,
++						 cdev);
++	struct rtl8365mb_leds *leds = led->leds;
++	u32 mask = RTL8365MB_LED_CONFIG_MASK(led->group);
++	u32 mode;
++	int ret;
++
++	ret = rtl8365mb_led_flags_to_mode(flags, &mode);
++	if (ret)
++		return ret;
++
++	mutex_lock(&leds->lock);
++	if (leds->hw_ports[led->group] & ~BIT(led->port) &&
++	    leds->mode[led->group] != mode) {
++		ret = -EOPNOTSUPP;
++		goto out;
++	}
++
++	/* per group modes, not the global LED mode */
++	ret = regmap_update_bits(led->priv->map, RTL8365MB_LED_CONFIG_REG,
++				 RTL8365MB_LED_CONFIG_SEL_MASK | mask,
++				 mode << __bf_shf(mask));
++	if (ret)
++		goto out;
++
++	ret = rtl8365mb_led_force(led, RTL8365MB_CPU_FORCE_LED_NORMAL);
++	if (ret)
++		goto out;
++
++	leds->mode[led->group] = mode;
++	leds->hw_ports[led->group] |= BIT(led->port);
++out:
++	mutex_unlock(&leds->lock);
++
++	return ret;
++}
++
++static int rtl8365mb_led_hw_control_get(struct led_classdev *cdev,
++					unsigned long *flags)
++{
++	struct rtl8365mb_led *led = container_of(cdev, struct rtl8365mb_led,
++						 cdev);
++	struct rtl8365mb_leds *leds = led->leds;
++	int ret = -EINVAL;
++	int i;
++
++	mutex_lock(&leds->lock);
++	if (!(leds->hw_ports[led->group] & BIT(led->port)))
++		goto out;
++
++	for (i = 0; i < ARRAY_SIZE(rtl8365mb_led_modes); i++) {
++		if (rtl8365mb_led_modes[i].mode == leds->mode[led->group]) {
++			*flags = rtl8365mb_led_modes[i].flags;
++			ret = 0;
++			break;
++		}
++	}
++out:
++	mutex_unlock(&leds->lock);
++
++	return ret;
++}
++
++static struct device *
++rtl8365mb_led_hw_control_get_device(struct led_classdev *cdev)
++{
++	struct rtl8365mb_led *led = container_of(cdev, struct rtl8365mb_led,
++						 cdev);
++	struct dsa_port *dp = dsa_to_port(&led->priv->ds, led->port);
++
++	if (!dp || !dp->user)
++		return NULL;
++
++	return &dp->user->dev;
++}
++#endif /* IS_ENABLED(CONFIG_LEDS_TRIGGERS) */
++
++static int rtl8365mb_setup_led(struct realtek_priv *priv,
++			       struct rtl8365mb_leds *leds, struct dsa_port *dp,
 +			       struct fwnode_handle *fwnode)
 +{
 +	struct led_init_data init_data = { };
@@ -123,6 +307,7 @@ Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
 +		return -ENOMEM;
 +
 +	led->priv = priv;
++	led->leds = leds;
 +	led->port = dp->index;
 +	led->group = group;
 +
@@ -138,6 +323,14 @@ Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
 +
 +	led->cdev.max_brightness = 1;
 +	led->cdev.brightness_set_blocking = rtl8365mb_led_brightness_set;
++#if IS_ENABLED(CONFIG_LEDS_TRIGGERS)
++	led->cdev.hw_control_trigger = "netdev";
++	led->cdev.hw_control_is_supported =
++		rtl8365mb_led_hw_control_is_supported;
++	led->cdev.hw_control_set = rtl8365mb_led_hw_control_set;
++	led->cdev.hw_control_get = rtl8365mb_led_hw_control_get;
++	led->cdev.hw_control_get_device = rtl8365mb_led_hw_control_get_device;
++#endif
 +	init_data.fwnode = fwnode;
 +
 +	ret = devm_led_classdev_register_ext(priv->dev, &led->cdev,
@@ -152,8 +345,17 @@ Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
 +int rtl8365mb_setup_leds(struct realtek_priv *priv)
 +{
 +	struct dsa_switch *ds = &priv->ds;
++	struct rtl8365mb_leds *leds;
 +	struct dsa_port *dp;
 +	int ret = 0;
++
++	leds = devm_kzalloc(priv->dev, sizeof(*leds), GFP_KERNEL);
++	if (!leds)
++		return -ENOMEM;
++
++	ret = devm_mutex_init(priv->dev, &leds->lock);
++	if (ret)
++		return ret;
 +
 +	dsa_switch_for_each_user_port(dp, ds) {
 +		struct device_node *leds_np;
@@ -166,7 +368,7 @@ Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
 +			continue;
 +
 +		for_each_available_child_of_node_scoped(leds_np, led_np) {
-+			ret = rtl8365mb_setup_led(priv, dp,
++			ret = rtl8365mb_setup_led(priv, leds, dp,
 +						  of_fwnode_handle(led_np));
 +			if (ret)
 +				break;

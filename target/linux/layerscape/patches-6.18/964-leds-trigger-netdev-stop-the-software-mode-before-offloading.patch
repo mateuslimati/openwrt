@@ -1,0 +1,33 @@
+From: Mateus Lima Alves <mateuslima.ti@gmail.com>
+Subject: [PATCH] leds: trigger: netdev: stop the software mode before offloading
+
+When the trigger switches a LED from software to hardware control, for
+instance when the tx mode is set before the rx mode that the hardware
+supports with it, a blink tick or a brightness change of the software
+mode may still be pending. On a LED that sets its brightness from a
+work item, such as one behind an SPI or MDIO bus, it then runs after
+hw_control_set() and forces the LED off for good.
+
+Stop the software blink and flush the pending brightness change before
+handing the LED to the hardware.
+
+Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
+---
+--- a/drivers/leds/trigger/ledtrig-netdev.c
++++ b/drivers/leds/trigger/ledtrig-netdev.c
+@@ -85,6 +85,15 @@ static void set_baseline_state(struct led_netdev_data *trigger_data)
+ 
+ 	/* Already validated, hw control is possible with the requested mode */
+ 	if (trigger_data->hw_control) {
++		/*
++		 * A blink tick or a brightness change still pending from the
++		 * software mode, such as one queued for a LED that can only
++		 * set its brightness from a work item, would override the
++		 * hardware mode after it is set.
++		 */
++		led_stop_software_blink(led_cdev);
++		flush_work(&led_cdev->set_brightness_work);
++
+ 		led_cdev->hw_control_set(led_cdev, trigger_data->mode);
+ 
+ 		return;
