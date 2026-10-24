@@ -164,6 +164,22 @@ endef
 
 $(eval $(call KernelPackage,iio-ads1015))
 
+define KernelPackage/iio-max1363
+  DEPENDS:=+kmod-i2c-core +kmod-industrialio-triggered-buffer
+  TITLE:=Maxim MAX1363 and similar ADCs driver
+  KCONFIG:=CONFIG_MAX1363
+  FILES:=$(LINUX_DIR)/drivers/iio/adc/max1363.ko
+  AUTOLOAD:=$(call AutoProbe,max1363)
+  $(call AddDepends/iio)
+endef
+
+define KernelPackage/iio-max1363/description
+ This driver adds support for the Maxim MAX1036-MAX1039, MAX1136-MAX1139,
+ MAX1236-MAX1239, MAX1361-MAX1364 and MAX11600-MAX11617 ADCs.
+endef
+
+$(eval $(call KernelPackage,iio-max1363))
+
 define KernelPackage/iio-mcp3422
   TITLE:=Microchip MCP342x ADC driver
   KCONFIG:=CONFIG_MCP3422
@@ -441,6 +457,22 @@ endef
 
 $(eval $(call KernelPackage,iio-si7020))
 
+
+define KernelPackage/iio-mma8452
+  DEPENDS:=+kmod-i2c-core +kmod-industrialio-triggered-buffer
+  TITLE:=Freescale / NXP MMA8452Q and similar accelerometers driver
+  KCONFIG:=CONFIG_MMA8452
+  FILES:=$(LINUX_DIR)/drivers/iio/accel/mma8452.ko
+  AUTOLOAD:=$(call AutoProbe,mma8452)
+  $(call AddDepends/iio)
+endef
+
+define KernelPackage/iio-mma8452/description
+ This driver adds support for the Freescale / NXP MMA8451Q, MMA8452Q,
+ MMA8453Q, MMA8652FC, MMA8653FC and FXLS8471Q accelerometers.
+endef
+
+$(eval $(call KernelPackage,iio-mma8452))
 
 define KernelPackage/iio-st_accel
   TITLE:=STMicroelectronics accelerometer 3-Axis Driver
