@@ -125,24 +125,28 @@ struct server {
 	unsigned int ping_id;
 };
 
-/* event program, run in the background */
-
+/*
+ * Event program. A disconnection ends this run, and procd then kills every
+ * process left in the cgroup of the service: wait for the program, which
+ * waits for its sound. Otherwise run it in the background.
+ */
 static void event(const char *what, const char *arg)
 {
+	bool last = !strcmp(what, "disconnected");
 	pid_t pid;
 
 	if (!event_prog)
 		return;
-	if (!strcmp(what, "disconnected")) {
+	if (last) {
 		if (!connected)
 			return;
 		connected = false;
 	}
 
-	/* fork twice so that init reaps the program */
 	pid = fork();
 	if (pid == 0) {
-		if (fork() == 0) {
+		/* fork twice so that init reaps a program left running */
+		if (last || fork() == 0) {
 			/* do not keep the HCI and L2CAP sockets open */
 			for (int fd = 3; fd < 1024; fd++)
 				close(fd);
@@ -1095,6 +1099,13 @@ static int advertise(int dev_id)
 	/* parameters can't change while a previous run is still advertising */
 	enable = 0;
 	hci_cmd(dd, OCF_LE_SET_ADVERTISE_ENABLE, &enable, 1);
+
+	/*
+	 * Newer kernels turn on address resolution in the controller (LL
+	 * privacy). With it on, the KW41Z keeps advertising but ignores every
+	 * connection request: turn it off, the server has no resolving list.
+	 */
+	hci_cmd(dd, OCF_LE_SET_ADDRESS_RESOLUTION_ENABLE, &enable, 1);
 	enable = 1;
 
 	err = hci_cmd(dd, OCF_LE_SET_ADVERTISING_PARAMETERS, &params,

@@ -1,9 +1,12 @@
 #!/bin/sh
 # LS1021A-IoT: play an alert sound on the line output (J2 OUT) in the
-# background. /etc/sounds/<name>.wav, when present, replaces the built-in
-# /usr/share/sounds/<name>.wav.
+# background, or with -w until it ends. /etc/sounds/<name>.wav, when
+# present, replaces the built-in /usr/share/sounds/<name>.wav.
 #
-#   ls1021a-iot-sound <name>
+#   ls1021a-iot-sound [-w] <name>
+
+wait=
+[ "$1" = -w ] && { wait=1; shift; }
 
 wav=/etc/sounds/$1.wav
 [ -f "$wav" ] || wav=/usr/share/sounds/$1.wav
@@ -11,5 +14,13 @@ wav=/etc/sounds/$1.wav
 command -v aplay >/dev/null || exit 1
 
 # the SAI has a single playback stream: one sound at a time, in order
-( flock 9
-  aplay -q "$wav" ) 9>/var/lock/ls1021a-iot-sound </dev/null >/dev/null 2>&1 &
+play() {
+	( flock 9
+	  aplay -q "$wav" ) 9>/var/lock/ls1021a-iot-sound </dev/null >/dev/null 2>&1
+}
+
+if [ -n "$wait" ]; then
+	play
+else
+	play &
+fi
