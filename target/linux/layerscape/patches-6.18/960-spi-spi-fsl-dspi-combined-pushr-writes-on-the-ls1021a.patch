@@ -1,0 +1,114 @@
+From: Mateus Lima Alves <mateuslima.ti@gmail.com>
+Subject: [PATCH] spi: spi-fsl-dspi: combined PUSHR writes on the LS1021A
+
+In XSPI mode the driver writes each command to the 16-bit CMD FIFO half
+of PUSHR and the data to the TX FIFO half, and waits for CMDTCF. The
+LS1021A rev 1.0 takes the data but never executes the command: the word
+stays in the TX FIFO, CMDTCF never sets and spi_sync() waits forever.
+
+Do what the driver did on this SoC before the TCFQ mode was removed:
+push each word together with its command in one 32-bit PUSHR write, one
+word of at most 16 bits at a time, and wait for its Transfer Complete
+flag (TCFQF) instead of CMDTCF.
+
+Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
+---
+--- a/drivers/spi/spi-fsl-dspi.c
++++ b/drivers/spi/spi-fsl-dspi.c
+@@ -129,6 +129,12 @@
+ 	u8			max_clock_factor;
+ 	int			fifo_size;
+ 	const struct regmap_config *regmap;
++	/*
++	 * Push each word with its command in one 32-bit PUSHR write and wait
++	 * for its Transfer Complete flag: the LS1021A rev 1.0 executes no
++	 * command written to the separate 16-bit CMD FIFO half of PUSHR.
++	 */
++	bool			combined_pushr;
+ };
+ 
+ enum {
+@@ -253,6 +259,7 @@
+ 		.max_clock_factor	= 8,
+ 		.fifo_size		= 4,
+ 		.regmap			= &dspi_regmap_config[DSPI_XSPI_REGMAP],
++		.combined_pushr		= true,
+ 	},
+ 	[LS1012A] = {
+ 		/* Has A-011218 DMA erratum */
+@@ -917,6 +924,16 @@
+ 		     SPI_FRAME_EBITS(dspi->oper_bits_per_word) |
+ 		     SPI_CTARE_DTCP(num_words));
+ 
++	if (dspi->devtype_data->combined_pushr) {
++		/* one word of at most 16 bits, see dspi_setup_accel() */
++		if (dspi->len > dspi->oper_word_size)
++			tx_cmd |= SPI_PUSHR_CMD_CONT;
++		tx_cmd |= SPI_PUSHR_CMD_CTCNT;
++		regmap_write(dspi->regmap, SPI_PUSHR,
++			     (u32)tx_cmd << 16 | (dspi_pop_tx(dspi) & 0xffff));
++		return;
++	}
++
+ 	/*
+ 	 * Write the CMD FIFO entry first, and then the two
+ 	 * corresponding TX FIFO entries (or one...).
+@@ -960,6 +977,7 @@
+ 	 * moment.
+ 	 */
+ 	if (dspi->devtype_data->trans_mode == DSPI_DMA_MODE ||
++	    dspi->devtype_data->combined_pushr ||
+ 	    xfer->bits_per_word % 8)
+ 		goto no_accel;
+ 
+@@ -1023,6 +1041,9 @@
+ 	/* In XSPI mode each 32-bit word occupies 2 TX FIFO entries */
+ 	if (dspi->oper_word_size == 4)
+ 		num_fifo_entries /= 2;
++	/* the Transfer Complete flag only tells one word at a time */
++	if (dspi->devtype_data->combined_pushr)
++		num_fifo_entries = 1;
+ 
+ 	/*
+ 	 * Integer division intentionally trims off odd (or non-multiple of 4)
+@@ -1076,6 +1097,11 @@
+ 	return true;
+ }
+ 
++static u32 dspi_done_flag(struct fsl_dspi *dspi)
++{
++	return dspi->devtype_data->combined_pushr ? SPI_SR_TCFQF : SPI_SR_CMDTCF;
++}
++
+ static void dspi_poll(struct fsl_dspi *dspi)
+ {
+ 	int tries;
+@@ -1090,7 +1116,7 @@
+ 			dspi->cur_msg->status = dspi_fifo_error(dspi, spi_sr);
+ 			if (dspi->cur_msg->status)
+ 				return;
+-			if (spi_sr & SPI_SR_CMDTCF)
++			if (spi_sr & dspi_done_flag(dspi))
+ 				break;
+ 		}
+ 		if (!tries) {
+@@ -1111,7 +1137,7 @@
+ 	regmap_read(dspi->regmap, SPI_SR, &spi_sr);
+ 	regmap_write(dspi->regmap, SPI_SR, spi_sr);
+ 
+-	if (!(spi_sr & SPI_SR_CMDTCF))
++	if (!(spi_sr & dspi_done_flag(dspi)))
+ 		return IRQ_NONE;
+ 
+ 	status = dspi_fifo_error(dspi, spi_sr);
+@@ -1444,7 +1470,9 @@
+ 
+ 	switch (dspi->devtype_data->trans_mode) {
+ 	case DSPI_XSPI_MODE:
+-		regmap_write(dspi->regmap, SPI_RSER, SPI_RSER_CMDTCFE);
++		regmap_write(dspi->regmap, SPI_RSER,
++			     dspi->devtype_data->combined_pushr ?
++			     SPI_RSER_TCFQE : SPI_RSER_CMDTCFE);
+ 		break;
+ 	case DSPI_DMA_MODE:
+ 		regmap_write(dspi->regmap, SPI_RSER,
