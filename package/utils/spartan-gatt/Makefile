@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=spartan-gatt
 PKG_VERSION:=1.0
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 PKG_LICENSE:=GPL-2.0-or-later
 PKG_BUILD_DEPENDS:=bluez
 
@@ -16,14 +16,16 @@ define Package/spartan-gatt
   SECTION:=utils
   CATEGORY:=Utilities
   TITLE:=Bluetooth LE GATT server for the LS1021A-IoT
-  DEPENDS:=@TARGET_layerscape_armv7 +kmod-bluetooth +ls1021aiot-kw41z
+  DEPENDS:=@TARGET_layerscape_armv7 +kmod-bluetooth +ls1021aiot-kw41z +swconfig
 endef
 
 define Package/spartan-gatt/description
-  Serves the LS1021A die and board temperatures (Environmental Sensing),
-  the 12 V input power and the CPLD LED0 over Bluetooth LE, through the
-  FRDM-KW41Z on the Arduino header. It replaces bluetoothd on hci0.
-  It plays an alert sound when a central connects and when it leaves.
+  Serves the LS1021A-IoT over Bluetooth LE, through the FRDM-KW41Z on the
+  Arduino header: the die and board temperatures, the voltage, current
+  and power of the 12 V input and of the 1.0 V rail, the fan state, the
+  switch ports, which it can power down and up, and the CPLD LED0, all as
+  text. It replaces bluetoothd on hci0 and plays an alert sound when a
+  central connects and when it leaves.
 endef
 
 define Package/spartan-gatt/conffiles

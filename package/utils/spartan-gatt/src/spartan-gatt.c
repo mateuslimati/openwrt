@@ -1,16 +1,23 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * GATT server for the LS1021A-IoT: board temperatures, input power and the
- * CPLD LED0 over Bluetooth LE.
+ * GATT server for the LS1021A-IoT: board temperatures, voltages, currents,
+ * the fan, the switch ports and the CPLD LED0 over Bluetooth LE.
  *
  * Based on tools/btgatt-server.c from BlueZ, Copyright (C) 2014 Google Inc.
  *
  * Services:
- *  - Environmental Sensing (0x181a): two Temperature (0x2a6e, sint16 in
- *    0.01 C) characteristics, the LS1021A die (ADT7461 remote channel) and
- *    the board (LM75A), read and notify
- *  - Spartan (7370a000-...): LED0 (uint8 0/1, read and write) and the 12 V
- *    input power (uint16 in mW, INA220 at 0x45, read and notify)
+ *  - Environmental Sensing (0x181a): the three temperatures (0x2a6e, sint16
+ *    in 0.01 C), read only
+ *  - Spartan (7370a000-...), every value as UTF-8 text with a Presentation
+ *    Format descriptor, so any client shows it as it is:
+ *      01 LED0, write 0/1/2 (or off/on/blink)
+ *      02 a summary of everything, read only (Read Blob past the MTU)
+ *      10-12 temperatures: LS1021A die (ADT7461 remote), ADT7461, LM75A
+ *      20-21 12 V input and 1.0 V rail: V, A and W from the INA220
+ *      30 fan, on while the ADT7461 THERM output is asserted
+ *      40-43 switch ports ETH2-ETH5, write 0/1 (or off/on) to power the
+ *            PHY down or up
+ *    10-43 notify, when the value changes
  *
  * It owns the LE ATT channel, so bluetoothd must not be running. It
  * advertises as connectable, serves one central and exits when it
@@ -30,7 +37,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <poll.h>
-#include <signal.h>
+#include <sys/wait.h>
 #include <sys/ioctl.h>
 
 #include "lib/bluetooth.h"
@@ -54,6 +61,17 @@
 #define UUID_ESS		0x181a
 #define UUID_TEMPERATURE	0x2a6e
 #define UUID_USER_DESC		0x2901
+#define UUID_PRES_FORMAT	0x2904
+
+/* Characteristic Presentation Format */
+#define FORMAT_SINT16		0x0e
+#define FORMAT_UTF8		0x19
+#define UNIT_NONE		0x2700
+#define UNIT_CELSIUS		0x272f
+
+#ifndef ARRAY_SIZE
+#define ARRAY_SIZE(a)		(sizeof(a) / sizeof((a)[0]))
+#endif
 
 /* 7370a0xx-4c53-3130-3231-412d496f5400: "sp" "LS1021A-IoT" */
 #define SPARTAN_UUID(x)	"7370a0" x "-4c53-3130-3231-412d496f5400"
@@ -68,19 +86,41 @@ static int kick_dd = -1;
 static const char *event_prog;
 static bool connected;
 
+/*
+ * The KW41Z hangs on ATT PDUs longer than the default ATT_MTU of 23, so
+ * values fit a notification (20 bytes) and longer texts are read in
+ * parts with Read Blob.
+ */
+#define TEXT_MAX	21	/* a value */
+#define LABEL_MAX	64	/* "label: value", what clients get */
+
 struct notifier {
 	uint16_t handle;
 	bool enabled;
-	bool (*read)(uint8_t *buf, size_t *len);
+	int arg;
+	const char *label;
+	bool (*read)(int arg, char *buf, size_t *len);
+	char last[LABEL_MAX];
+	size_t last_len;
 };
 
-enum { N_DIE, N_BOARD, N_POWER, N_MAX };
+enum {
+	N_TEMP,				/* 3 temperatures */
+	N_RAIL = N_TEMP + 3,		/* 2 INA220 */
+	N_FAN = N_RAIL + 2,
+	N_PORT,				/* 4 switch ports */
+	N_MAX = N_PORT + 4
+};
 
 struct server {
 	struct bt_att *att;
 	struct gatt_db *db;
 	struct bt_gatt_server *gatt;
 	struct notifier notify[N_MAX];
+	char summary[512];
+	size_t summary_len;
+	uint16_t svc_chngd_handle;
+	bool svc_chngd_sent;
 	unsigned int timeout_id;
 	unsigned int ping_id;
 };
@@ -89,6 +129,8 @@ struct server {
 
 static void event(const char *what, const char *arg)
 {
+	pid_t pid;
+
 	if (!event_prog)
 		return;
 	if (!strcmp(what, "disconnected")) {
@@ -96,13 +138,20 @@ static void event(const char *what, const char *arg)
 			return;
 		connected = false;
 	}
-	if (fork() == 0) {
-		/* do not keep the HCI and L2CAP sockets open */
-		for (int fd = 3; fd < 1024; fd++)
-			close(fd);
-		execl(event_prog, event_prog, what, arg, (char *) NULL);
-		_exit(127);
+
+	/* fork twice so that init reaps the program */
+	pid = fork();
+	if (pid == 0) {
+		if (fork() == 0) {
+			/* do not keep the HCI and L2CAP sockets open */
+			for (int fd = 3; fd < 1024; fd++)
+				close(fd);
+			execl(event_prog, event_prog, what, arg, (char *) NULL);
+		}
+		_exit(0);
 	}
+	if (pid > 0)
+		waitpid(pid, NULL, 0);
 }
 
 /* hwmon */
@@ -188,38 +237,187 @@ static bool read_hwmon(const char *name, const char *dev, const char *attr,
 	return read_long(path, val);
 }
 
-/* millidegrees to the GATT Temperature format, sint16 in 0.01 C */
-static bool temp_value(const char *name, const char *attr, uint8_t *buf,
-		       size_t *len)
+/*
+ * Values as UTF-8 text, so any GATT client shows them as they are, at
+ * most TEXT_MAX - 1 bytes.
+ */
+#define DEG	"\xc2\xb0" "C"
+
+static const struct {
+	const char *name, *attr, *label, *desc;
+} temps[] = {
+	{ "adt7461", "temp2_input", "Die LS1021A", "Temperatura do die LS1021A" },
+	{ "adt7461", "temp1_input", "Placa ADT7461",
+	  "Temperatura da placa (ADT7461)" },
+	{ "lm75", "temp1_input", "Placa LM75A", "Temperatura da placa (LM75A)" },
+};
+
+static const struct {
+	const char *dev, *vfmt, *label, *desc;
+} rails[] = {
+	{ "0-0045", "%.2fV", "Entrada 12 V", "Entrada 12 V (INA220 0x45)" },
+	{ "0-0044", "%.3fV", "Trilho 1,0 V", "Trilho 1,0 V (INA220 0x44)" },
+};
+
+/* the switch ports in front panel order, and the LAN jack of each */
+static const struct {
+	int port;
+	const char *jack;
+} ports[] = {
+	{ 3, "ETH2" }, { 2, "ETH3" }, { 1, "ETH4" }, { 0, "ETH5" },
+};
+
+static bool temp_text(int i, char *buf, size_t *len)
 {
 	long mc;
 
-	if (!read_hwmon(name, NULL, attr, &mc))
+	if (!read_hwmon(temps[i].name, NULL, temps[i].attr, &mc))
+		return false;
+	*len = snprintf(buf, TEXT_MAX, "%.1f " DEG, mc / 1000.0);
+	return true;
+}
+
+/* GATT Temperature format, sint16 in 0.01 C, for the standard service */
+static bool temp_raw(int i, uint8_t *buf)
+{
+	long mc;
+
+	if (!read_hwmon(temps[i].name, NULL, temps[i].attr, &mc))
 		return false;
 	put_le16((int16_t) (mc / 10), buf);
-	*len = 2;
 	return true;
 }
 
-static bool die_temp(uint8_t *buf, size_t *len)
+static bool rail_text(int i, char *buf, size_t *len)
 {
-	return temp_value("adt7461", "temp2_input", buf, len);
-}
+	long mv, ma, uw;
+	int n;
 
-static bool board_temp(uint8_t *buf, size_t *len)
-{
-	return temp_value("lm75", "temp1_input", buf, len);
-}
-
-static bool input_power(uint8_t *buf, size_t *len)
-{
-	long uw;
-
-	if (!read_hwmon("ina2", "0-0045", "power1_input", &uw))
+	if (!read_hwmon("ina2", rails[i].dev, "in1_input", &mv) ||
+	    !read_hwmon("ina2", rails[i].dev, "curr1_input", &ma) ||
+	    !read_hwmon("ina2", rails[i].dev, "power1_input", &uw))
 		return false;
-	put_le16((uint16_t) (uw / 1000), buf);
-	*len = 2;
+	n = snprintf(buf, TEXT_MAX, rails[i].vfmt, mv / 1000.0);
+	n += snprintf(buf + n, TEXT_MAX - n, " %.3fA %.2fW", ma / 1000.0,
+		      uw / 1e6);
+	*len = n < TEXT_MAX ? n : TEXT_MAX - 1;
 	return true;
+}
+
+/*
+ * The THERM output of the ADT7461 switches the fan through the CPLD: its
+ * remote channel alarm is the fan state, with the hysteresis of THERM.
+ */
+static bool fan_text(int i, char *buf, size_t *len)
+{
+	long on, limit_on, limit_off;
+
+	if (!read_hwmon("adt7461", NULL, "temp2_crit_alarm", &on))
+		return false;
+	if (read_hwmon("adt7461", NULL, "temp2_crit", &limit_on) &&
+	    read_hwmon("adt7461", NULL, "temp2_crit_hyst", &limit_off))
+		*len = snprintf(buf, TEXT_MAX, "%s (%ld/%ld" DEG ")",
+				on ? "ligado" : "desligado", limit_on / 1000,
+				limit_off / 1000);
+	else
+		*len = snprintf(buf, TEXT_MAX, "%s",
+				on ? "ligado" : "desligado");
+	return true;
+}
+
+static bool swconfig_get(int port, const char *attr, char *out, size_t len)
+{
+	char cmd[80];
+	FILE *p;
+	bool ok;
+
+	snprintf(cmd, sizeof(cmd),
+		 "swconfig dev switch0 port %d get %s 2>/dev/null", port, attr);
+	p = popen(cmd, "r");
+	if (!p)
+		return false;
+	ok = fgets(out, len, p) != NULL;
+	return pclose(p) == 0 && ok;
+}
+
+static bool port_text(int i, char *buf, size_t *len)
+{
+	char s[128], *speed;
+
+	if (!swconfig_get(ports[i].port, "disable", s, sizeof(s)))
+		return false;
+	if (atoi(s)) {
+		*len = snprintf(buf, TEXT_MAX, "desligada");
+		return true;
+	}
+	if (!swconfig_get(ports[i].port, "link", s, sizeof(s)))
+		return false;
+	speed = strstr(s, "speed:");
+	if (!strstr(s, "link:up") || !speed)
+		*len = snprintf(buf, TEXT_MAX, "ligada, sem link");
+	else
+		*len = snprintf(buf, TEXT_MAX, "ligada, %d Mb/s",
+				atoi(speed + 6));
+	return true;
+}
+
+static bool port_set(int i, bool on)
+{
+	char cmd[80];
+
+	snprintf(cmd, sizeof(cmd),
+		 "swconfig dev switch0 port %d set disable %d", ports[i].port,
+		 !on);
+	return system(cmd) == 0;
+}
+
+static bool led_text(int i, char *buf, size_t *len)
+{
+	char trigger[256];
+	FILE *f;
+	long b;
+
+	f = fopen(LED_PATH "/trigger", "r");
+	if (f) {
+		if (fgets(trigger, sizeof(trigger), f) &&
+		    strstr(trigger, "[timer]")) {
+			fclose(f);
+			*len = snprintf(buf, TEXT_MAX, "piscando");
+			return true;
+		}
+		fclose(f);
+	}
+	if (!read_long(LED_PATH "/brightness", &b))
+		return false;
+	*len = snprintf(buf, TEXT_MAX, "%s", b ? "ligado" : "desligado");
+	return true;
+}
+
+/* everything in one text, read with Read Blob when it exceeds the MTU */
+static void build_summary(struct server *server)
+{
+	char *s = server->summary, v[TEXT_MAX];
+	size_t size = sizeof(server->summary), n = 0, len;
+	unsigned int i;
+
+#define ADD(...) do { \
+		if (n < size) \
+			n += snprintf(s + n, size - n, __VA_ARGS__); \
+	} while (0)
+#define VAL(f, i) ((f)(i, v, &len) ? v : "indispon\xc3\xadvel")
+
+	for (i = 0; i < ARRAY_SIZE(temps); i++)
+		ADD("%s: %s\n", temps[i].desc, VAL(temp_text, i));
+	for (i = 0; i < ARRAY_SIZE(rails); i++)
+		ADD("%s: %s\n", rails[i].desc, VAL(rail_text, i));
+	ADD("Ventilador: %s\n", VAL(fan_text, 0));
+	for (i = 0; i < ARRAY_SIZE(ports); i++)
+		ADD("Porta %s: %s\n", ports[i].jack, VAL(port_text, i));
+	ADD("LED0: %s\n", VAL(led_text, 0));
+
+#undef VAL
+#undef ADD
+	server->summary_len = n < size ? n : size - 1;
 }
 
 /*
@@ -271,40 +469,112 @@ static void name_read_cb(struct gatt_db_attribute *attrib, unsigned int id,
 				      len - offset);
 }
 
-static void value_read_cb(struct gatt_db_attribute *attrib, unsigned int id,
-			  uint16_t offset, uint8_t opcode, struct bt_att *att,
-			  void *user_data)
+/*
+ * Clients such as nRF Connect on iOS do not show the User Description, so
+ * every value carries its label.
+ */
+static bool labeled_text(struct notifier *n, char *buf, size_t *len)
+{
+	char v[TEXT_MAX];
+	size_t vlen;
+	int ret;
+
+	if (!n->read(n->arg, v, &vlen))
+		return false;
+	ret = snprintf(buf, LABEL_MAX, "%s: %.*s", n->label, (int) vlen, v);
+	*len = ret < LABEL_MAX ? ret : LABEL_MAX - 1;
+	return true;
+}
+
+static void text_read_cb(struct gatt_db_attribute *attrib, unsigned int id,
+			 uint16_t offset, uint8_t opcode, struct bt_att *att,
+			 void *user_data)
 {
 	struct notifier *n = user_data;
-	uint8_t buf[8];
+	char buf[LABEL_MAX];
 	size_t len;
 
-	if (!n->read(buf, &len)) {
+	if (!labeled_text(n, buf, &len)) {
+		kick();
+		gatt_db_attribute_read_result(attrib, id,
+					      BT_ATT_ERROR_UNLIKELY, NULL, 0);
+		return;
+	}
+	if (offset > len) {
+		kick();
+		gatt_db_attribute_read_result(attrib, id,
+					      BT_ATT_ERROR_INVALID_OFFSET,
+					      NULL, 0);
+		return;
+	}
+	kick();
+	gatt_db_attribute_read_result(attrib, id, 0,
+				      (const uint8_t *) buf + offset,
+				      len - offset);
+}
+
+static void temp_raw_read_cb(struct gatt_db_attribute *attrib,
+			     unsigned int id, uint16_t offset, uint8_t opcode,
+			     struct bt_att *att, void *user_data)
+{
+	uint8_t buf[2];
+
+	if (!temp_raw((intptr_t) user_data, buf)) {
 		kick();
 		gatt_db_attribute_read_result(attrib, id,
 					      BT_ATT_ERROR_UNLIKELY, NULL, 0);
 		return;
 	}
 	kick();
-	gatt_db_attribute_read_result(attrib, id, 0, buf, len);
+	gatt_db_attribute_read_result(attrib, id, 0, buf, sizeof(buf));
 }
 
+/* a new text at offset 0, the same one for the Read Blob that follow */
+static void summary_read_cb(struct gatt_db_attribute *attrib,
+			    unsigned int id, uint16_t offset, uint8_t opcode,
+			    struct bt_att *att, void *user_data)
+{
+	struct server *server = user_data;
+
+	if (!offset || !server->summary_len)
+		build_summary(server);
+	if (offset > server->summary_len) {
+		kick();
+		gatt_db_attribute_read_result(attrib, id,
+					      BT_ATT_ERROR_INVALID_OFFSET,
+					      NULL, 0);
+		return;
+	}
+	kick();
+	gatt_db_attribute_read_result(attrib, id, 0,
+				(const uint8_t *) server->summary + offset,
+				server->summary_len - offset);
+}
+
+/* only changed values are sent */
 static bool notify_cb(void *user_data)
 {
 	struct server *server = user_data;
-	uint8_t buf[8];
-	size_t len;
+	size_t len, max = bt_att_get_mtu(server->att) - 3;
+	char buf[LABEL_MAX];
 	int i;
 
 	for (i = 0; i < N_MAX; i++) {
 		struct notifier *n = &server->notify[i];
 
-		if (n->enabled && n->read(buf, &len)) {
-			kick();
-			bt_gatt_server_send_notification(server->gatt,
-							 n->handle, buf, len,
-							 false);
-		}
+		if (!n->enabled || !labeled_text(n, buf, &len))
+			continue;
+		/* the value alone when the label does not fit */
+		if (len > max && !n->read(n->arg, buf, &len))
+			continue;
+		if (len == n->last_len && !memcmp(buf, n->last, len))
+			continue;
+		memcpy(n->last, buf, len);
+		n->last_len = len;
+		kick();
+		bt_gatt_server_send_notification(server->gatt, n->handle,
+						 (const uint8_t *) buf, len,
+						 false);
 	}
 	return true;
 }
@@ -356,28 +626,90 @@ static void ccc_write_cb(struct gatt_db_attribute *attrib, unsigned int id,
 		ecode = 0x80;
 	else {
 		ccc->n->enabled = value[0] == 0x01;
+		/* send the current value on the next tick */
+		ccc->n->last_len = 0;
 		update_timer(ccc->server);
 	}
 
 	gatt_db_attribute_write_result(attrib, id, ecode);
 }
 
-static void led_read_cb(struct gatt_db_attribute *attrib, unsigned int id,
-			uint16_t offset, uint8_t opcode, struct bt_att *att,
-			void *user_data)
+/*
+ * Clients keep the database of a device they saw before, so they would
+ * not see a new one. When a client subscribes to Service Changed, tell it
+ * once per connection that the whole database may have changed.
+ */
+static void svc_chngd_ccc_read_cb(struct gatt_db_attribute *attrib,
+				  unsigned int id, uint16_t offset,
+				  uint8_t opcode, struct bt_att *att,
+				  void *user_data)
 {
-	uint8_t value;
-	long b;
+	struct server *server = user_data;
+	uint8_t value[2] = { server->svc_chngd_sent ? 0x02 : 0x00, 0x00 };
 
-	if (!read_long(LED_PATH "/brightness", &b)) {
-		kick();
-		gatt_db_attribute_read_result(attrib, id,
-					      BT_ATT_ERROR_UNLIKELY, NULL, 0);
+	gatt_db_attribute_read_result(attrib, id, 0, value, 2);
+}
+
+static void svc_chngd_ccc_write_cb(struct gatt_db_attribute *attrib,
+				   unsigned int id, uint16_t offset,
+				   const uint8_t *value, size_t len,
+				   uint8_t opcode, struct bt_att *att,
+				   void *user_data)
+{
+	struct server *server = user_data;
+	uint8_t range[4];
+
+	if (!value || len != 2) {
+		gatt_db_attribute_write_result(attrib, id,
+				BT_ATT_ERROR_INVALID_ATTRIBUTE_VALUE_LEN);
 		return;
 	}
-	value = b ? 1 : 0;
+	gatt_db_attribute_write_result(attrib, id, 0);
+
+	if (!(value[0] & 0x02) || server->svc_chngd_sent)
+		return;
+	server->svc_chngd_sent = true;
+	put_le16(0x0001, range);
+	put_le16(0xffff, range + 2);
 	kick();
-	gatt_db_attribute_read_result(attrib, id, 0, &value, 1);
+	bt_gatt_server_send_indication(server->gatt, server->svc_chngd_handle,
+				       range, sizeof(range), NULL, NULL,
+				       NULL);
+}
+
+/*
+ * Commands are a byte or text: 0/1/2, or a word. Returns the number,
+ * -1 when it is not one of them.
+ */
+static int parse_cmd(const uint8_t *value, size_t len)
+{
+	static const struct {
+		const char *word;
+		int cmd;
+	} words[] = {
+		{ "0", 0 }, { "off", 0 }, { "desligar", 0 }, { "desligado", 0 },
+		{ "desligada", 0 },
+		{ "1", 1 }, { "on", 1 }, { "ligar", 1 }, { "ligado", 1 },
+		{ "ligada", 1 },
+		{ "2", 2 }, { "blink", 2 }, { "piscar", 2 },
+	};
+	char s[16];
+	unsigned int i;
+
+	if (len == 1 && value[0] <= 2)
+		return value[0];
+	if (!len || len >= sizeof(s))
+		return -1;
+	memcpy(s, value, len);
+	s[len] = '\0';
+	/* clients often append a line end */
+	while (len && (s[len - 1] == '\n' || s[len - 1] == '\r' ||
+		       s[len - 1] == ' '))
+		s[--len] = '\0';
+	for (i = 0; i < ARRAY_SIZE(words); i++)
+		if (!strcasecmp(s, words[i].word))
+			return words[i].cmd;
+	return -1;
 }
 
 /* 0 off, 1 on, 2 back to blinking (timer trigger) */
@@ -386,35 +718,59 @@ static void led_write_cb(struct gatt_db_attribute *attrib, unsigned int id,
 			 uint8_t opcode, struct bt_att *att, void *user_data)
 {
 	uint8_t ecode = 0;
+	int cmd;
 	bool ok;
 
-	if (!value || len != 1) {
-		ecode = BT_ATT_ERROR_INVALID_ATTRIBUTE_VALUE_LEN;
-		goto done;
-	}
 	if (offset) {
 		ecode = BT_ATT_ERROR_INVALID_OFFSET;
 		goto done;
 	}
-
-	switch (value[0]) {
-	case 0:
-	case 1:
-		ok = write_str(LED_PATH "/trigger", "none") &&
-		     write_str(LED_PATH "/brightness", value[0] ? "1" : "0");
-		break;
-	case 2:
-		ok = write_str(LED_PATH "/trigger", "timer");
-		break;
-	default:
+	cmd = value ? parse_cmd(value, len) : -1;
+	if (cmd < 0) {
 		ecode = 0x80;
 		goto done;
 	}
 
+	if (cmd == 2)
+		ok = write_str(LED_PATH "/trigger", "timer");
+	else
+		ok = write_str(LED_PATH "/trigger", "none") &&
+		     write_str(LED_PATH "/brightness", cmd ? "1" : "0");
+
 	if (!ok)
 		ecode = BT_ATT_ERROR_UNLIKELY;
 	else
-		printf("LED0 <- %u\n", value[0]);
+		printf("LED0 <- %d\n", cmd);
+
+done:
+	kick();
+	gatt_db_attribute_write_result(attrib, id, ecode);
+}
+
+/* 0 powers the port PHY down, 1 up again */
+static void port_write_cb(struct gatt_db_attribute *attrib, unsigned int id,
+			  uint16_t offset, const uint8_t *value, size_t len,
+			  uint8_t opcode, struct bt_att *att, void *user_data)
+{
+	struct notifier *n = user_data;
+	uint8_t ecode = 0;
+	int cmd;
+
+	if (offset) {
+		ecode = BT_ATT_ERROR_INVALID_OFFSET;
+		goto done;
+	}
+	cmd = value ? parse_cmd(value, len) : -1;
+	if (cmd != 0 && cmd != 1) {
+		ecode = 0x80;
+		goto done;
+	}
+
+	if (!port_set(n->arg, cmd))
+		ecode = BT_ATT_ERROR_UNLIKELY;
+	else
+		printf("port %s <- %s\n", ports[n->arg].jack,
+		       cmd ? "on" : "off");
 
 done:
 	kick();
@@ -449,50 +805,80 @@ static void set_value(struct gatt_db_attribute *attr, const void *val,
 				confirm_write, NULL);
 }
 
-static void add_user_desc(struct gatt_db_attribute *service, const char *desc)
+static void add_desc(struct gatt_db_attribute *service, uint16_t uuid16,
+		     const void *val, size_t len)
 {
 	struct gatt_db_attribute *attr;
 	bt_uuid_t uuid;
 
-	bt_uuid16_create(&uuid, UUID_USER_DESC);
+	bt_uuid16_create(&uuid, uuid16);
 	attr = gatt_db_service_add_descriptor(service, &uuid, BT_ATT_PERM_READ,
 					      NULL, NULL, NULL);
-	set_value(attr, desc, strlen(desc));
+	set_value(attr, val, len);
 }
 
-static void add_notify_chrc(struct server *server,
-			    struct gatt_db_attribute *service,
-			    const bt_uuid_t *uuid, int idx, const char *desc,
-			    bool (*read)(uint8_t *, size_t *))
+static void add_user_desc(struct gatt_db_attribute *service, const char *desc)
+{
+	add_desc(service, UUID_USER_DESC, desc, strlen(desc));
+}
+
+/* Characteristic Presentation Format: format, exponent, unit, namespace */
+static void add_format(struct gatt_db_attribute *service, uint8_t format,
+		       int8_t exponent, uint16_t unit)
+{
+	uint8_t fmt[7] = { format, (uint8_t) exponent, unit & 0xff, unit >> 8,
+			   0x01, 0x00, 0x00 };
+
+	add_desc(service, UUID_PRES_FORMAT, fmt, sizeof(fmt));
+}
+
+/* a UTF-8 text characteristic, read and notify, writable with write_cb */
+static void add_text_chrc(struct server *server,
+			  struct gatt_db_attribute *service, const char *uuid_str,
+			  int idx, int arg, const char *label,
+			  const char *desc, bool (*read)(int, char *, size_t *),
+			  gatt_db_write_t write_cb)
 {
 	struct notifier *n = &server->notify[idx];
 	struct gatt_db_attribute *chrc;
+	uint32_t perm = BT_ATT_PERM_READ;
+	uint8_t props = BT_GATT_CHRC_PROP_READ | BT_GATT_CHRC_PROP_NOTIFY;
 	struct ccc *ccc;
-	bt_uuid_t ccc_uuid;
+	bt_uuid_t uuid;
+
+	if (write_cb) {
+		perm |= BT_ATT_PERM_WRITE;
+		props |= BT_GATT_CHRC_PROP_WRITE;
+	}
 
 	n->read = read;
-	chrc = gatt_db_service_add_characteristic(service, uuid,
-				BT_ATT_PERM_READ,
-				BT_GATT_CHRC_PROP_READ | BT_GATT_CHRC_PROP_NOTIFY,
-				value_read_cb, NULL, n);
+	n->arg = arg;
+	n->label = label;
+	bt_string_to_uuid(&uuid, uuid_str);
+	chrc = gatt_db_service_add_characteristic(service, &uuid, perm, props,
+						  text_read_cb, write_cb, n);
 	n->handle = gatt_db_attribute_get_handle(chrc);
 
 	ccc = new0(struct ccc, 1);
 	ccc->server = server;
 	ccc->n = n;
-	bt_uuid16_create(&ccc_uuid, GATT_CLIENT_CHARAC_CFG_UUID);
-	gatt_db_service_add_descriptor(service, &ccc_uuid,
+	bt_uuid16_create(&uuid, GATT_CLIENT_CHARAC_CFG_UUID);
+	gatt_db_service_add_descriptor(service, &uuid,
 				       BT_ATT_PERM_READ | BT_ATT_PERM_WRITE,
 				       ccc_read_cb, ccc_write_cb, ccc);
 
 	add_user_desc(service, desc);
+	add_format(service, FORMAT_UTF8, 0, UNIT_NONE);
 }
 
 static void populate_db(struct server *server)
 {
 	struct gatt_db_attribute *service, *attr;
+	struct notifier *led = new0(struct notifier, 1);
 	uint16_t appearance;
+	char uuid_str[40], desc[48];
 	bt_uuid_t uuid;
+	unsigned int i;
 
 	bt_uuid16_create(&uuid, UUID_GAP);
 	service = gatt_db_add_service(server->db, &uuid, true, 6);
@@ -510,29 +896,80 @@ static void populate_db(struct server *server)
 	gatt_db_service_set_active(service, true);
 
 	bt_uuid16_create(&uuid, UUID_GATT);
-	service = gatt_db_add_service(server->db, &uuid, true, 1);
+	service = gatt_db_add_service(server->db, &uuid, true, 4);
+	bt_uuid16_create(&uuid, GATT_CHARAC_SERVICE_CHANGED);
+	attr = gatt_db_service_add_characteristic(service, &uuid,
+						  BT_ATT_PERM_NONE,
+						  BT_GATT_CHRC_PROP_INDICATE,
+						  NULL, NULL, NULL);
+	server->svc_chngd_handle = gatt_db_attribute_get_handle(attr);
+	bt_uuid16_create(&uuid, GATT_CLIENT_CHARAC_CFG_UUID);
+	gatt_db_service_add_descriptor(service, &uuid,
+				       BT_ATT_PERM_READ | BT_ATT_PERM_WRITE,
+				       svc_chngd_ccc_read_cb,
+				       svc_chngd_ccc_write_cb, server);
 	gatt_db_service_set_active(service, true);
 
+	/* the standard temperatures, for clients that know the service */
 	bt_uuid16_create(&uuid, UUID_ESS);
-	service = gatt_db_add_service(server->db, &uuid, true, 9);
-	bt_uuid16_create(&uuid, UUID_TEMPERATURE);
-	add_notify_chrc(server, service, &uuid, N_DIE, "LS1021A die",
-			die_temp);
-	add_notify_chrc(server, service, &uuid, N_BOARD, "Board (LM75A)",
-			board_temp);
+	service = gatt_db_add_service(server->db, &uuid, true,
+				      1 + 4 * ARRAY_SIZE(temps));
+	for (i = 0; i < ARRAY_SIZE(temps); i++) {
+		bt_uuid16_create(&uuid, UUID_TEMPERATURE);
+		gatt_db_service_add_characteristic(service, &uuid,
+					BT_ATT_PERM_READ, BT_GATT_CHRC_PROP_READ,
+					temp_raw_read_cb, NULL,
+					(void *) (intptr_t) i);
+		add_user_desc(service, temps[i].desc);
+		add_format(service, FORMAT_SINT16, -2, UNIT_CELSIUS);
+	}
 	gatt_db_service_set_active(service, true);
 
+	/* the whole board as text */
 	bt_string_to_uuid(&uuid, SPARTAN_UUID("00"));
-	service = gatt_db_add_service(server->db, &uuid, true, 9);
+	service = gatt_db_add_service(server->db, &uuid, true,
+				      1 + 4 + 4 + 5 * N_MAX);
+
 	bt_string_to_uuid(&uuid, SPARTAN_UUID("01"));
+	led->read = led_text;
+	led->label = "LED0";
 	gatt_db_service_add_characteristic(service, &uuid,
 				BT_ATT_PERM_READ | BT_ATT_PERM_WRITE,
 				BT_GATT_CHRC_PROP_READ | BT_GATT_CHRC_PROP_WRITE,
-				led_read_cb, led_write_cb, server);
-	add_user_desc(service, "LED0: 0 off, 1 on, 2 blink");
+				text_read_cb, led_write_cb, led);
+	add_user_desc(service, "LED0: escreva 0 (desliga), 1 (liga) ou 2 (pisca)");
+	add_format(service, FORMAT_UTF8, 0, UNIT_NONE);
+
 	bt_string_to_uuid(&uuid, SPARTAN_UUID("02"));
-	add_notify_chrc(server, service, &uuid, N_POWER, "12 V input power (mW)",
-			input_power);
+	gatt_db_service_add_characteristic(service, &uuid, BT_ATT_PERM_READ,
+					   BT_GATT_CHRC_PROP_READ,
+					   summary_read_cb, NULL, server);
+	add_user_desc(service, "Resumo da placa");
+	add_format(service, FORMAT_UTF8, 0, UNIT_NONE);
+
+#define UUID_STR(x) (snprintf(uuid_str, sizeof(uuid_str), \
+				    SPARTAN_UUID("%02x"), (x)), uuid_str)
+
+	for (i = 0; i < ARRAY_SIZE(temps); i++)
+		add_text_chrc(server, service, UUID_STR(0x10 + i), N_TEMP + i,
+			      i, temps[i].label, temps[i].desc, temp_text,
+			      NULL);
+	for (i = 0; i < ARRAY_SIZE(rails); i++)
+		add_text_chrc(server, service, UUID_STR(0x20 + i), N_RAIL + i,
+			      i, rails[i].label, rails[i].desc, rail_text,
+			      NULL);
+	add_text_chrc(server, service, UUID_STR(0x30), N_FAN, 0, "Ventilador",
+		      "Ventilador", fan_text, NULL);
+	for (i = 0; i < ARRAY_SIZE(ports); i++) {
+		snprintf(desc, sizeof(desc),
+			 "Porta %s: escreva 0 (desliga) ou 1 (liga)",
+			 ports[i].jack);
+		add_text_chrc(server, service, UUID_STR(0x40 + i), N_PORT + i,
+			      i, ports[i].jack, desc, port_text,
+			      port_write_cb);
+	}
+
+#undef UUID_STR
 	gatt_db_service_set_active(service, true);
 }
 
@@ -698,7 +1135,8 @@ static int att_listen(const bdaddr_t *src)
 
 static void usage(void)
 {
-	printf("Usage: spartan-gatt [-i hciX] [-n name] [-e program] [-v]\n");
+	printf("Usage: spartan-gatt [-i hciX] [-n name] [-e program] [-v]\n"
+	       "       spartan-gatt -s    print the summary and exit\n");
 }
 
 int main(int argc, char *argv[])
@@ -710,7 +1148,7 @@ int main(int argc, char *argv[])
 	bdaddr_t src;
 	char ba[18];
 
-	while ((opt = getopt(argc, argv, "he:i:n:v")) != -1) {
+	while ((opt = getopt(argc, argv, "he:i:n:sv")) != -1) {
 		switch (opt) {
 		case 'i':
 			dev_id = hci_devid(optarg);
@@ -725,6 +1163,13 @@ int main(int argc, char *argv[])
 		case 'e':
 			event_prog = optarg;
 			break;
+		case 's': {
+			static struct server server;
+
+			build_summary(&server);
+			fputs(server.summary, stdout);
+			return EXIT_SUCCESS;
+		}
 		case 'v':
 			verbose = true;
 			break;
@@ -744,8 +1189,6 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 
 	setvbuf(stdout, NULL, _IOLBF, 0);
-	/* event children are not waited for */
-	signal(SIGCHLD, SIG_IGN);
 
 	/*
 	 * The controller refuses to advertise while the previous central is
