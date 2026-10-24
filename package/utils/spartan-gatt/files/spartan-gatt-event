@@ -1,0 +1,10 @@
+#!/bin/sh
+# spartan-gatt -e program: an alert sound when a central connects or leaves.
+#   spartan-gatt-event connected <address> | disconnected
+
+command -v ls1021a-iot-sound >/dev/null || exit 0
+
+case "$1" in
+connected) ls1021a-iot-sound bt-connect ;;
+disconnected) ls1021a-iot-sound bt-disconnect ;;
+esac

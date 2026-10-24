@@ -1,0 +1,41 @@
+#!/bin/sh /etc/rc.common
+# Attach the FRDM-KW41Z HCI controller on the Arduino header as hci0.
+
+START=96
+STOP=10
+
+SHIELD_RESET=$(ls /sys/bus/platform/devices/*.cpld/shield_reset 2>/dev/null | head -n 1)
+
+start() {
+	local enabled device baud i
+
+	config_load ls1021aiot_kw41z
+	config_get_bool enabled kw41z enabled 1
+	config_get device kw41z device /dev/ttyS1
+	config_get baud kw41z baud 115200
+	[ "$enabled" = 1 ] || return 0
+
+	for i in 1 2 3; do
+		# the KW41Z leaves reset before the LS1021A configures its UART, and
+		# the garbage it sees then latches an overrun that its firmware never
+		# clears; reset it now that the line is idle (CPLD image 2.10)
+		[ -w "$SHIELD_RESET" ] && echo pulse > "$SHIELD_RESET" && sleep 1
+		if hciattach -t 5 "$device" any "$baud" noflow nosleep >/dev/null 2>&1; then
+			sleep 2
+			hciconfig hci0 up && {
+				logger -t ls1021aiot_kw41z "hci0 up on $device"
+				return 0
+			}
+		fi
+		killall hciattach 2>/dev/null
+		sleep 2
+	done
+
+	logger -t ls1021aiot_kw41z "no HCI controller on $device"
+	return 1
+}
+
+stop() {
+	hciconfig hci0 down 2>/dev/null
+	killall hciattach 2>/dev/null
+}
