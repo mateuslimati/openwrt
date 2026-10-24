@@ -4,14 +4,14 @@
 #
 #   ubus call ls1021aiot status
 #   ubus call ls1021aiot history '{"points":720,"seconds":86400}'
-#   ubus call ls1021aiot set_port '{"port":2,"on":false}'
+#   ubus call ls1021aiot set_port '{"port":"lan3","on":false}'
 
 . /usr/share/libubox/jshn.sh
 
 LOG=/tmp/ls1021aiot/sensors.log
 
-# switch port and LAN jack, front panel order
-PORTS="3:ETH2 2:ETH3 1:ETH4 0:ETH5"
+# DSA interface and LAN jack of each switch port, front panel order
+PORTS="lan2:ETH2 lan3:ETH3 lan4:ETH4 lan5:ETH5"
 
 hwmon() {
 	local h
@@ -57,26 +57,27 @@ status() {
 	json_add_int off_mc "$(v $adt/temp2_crit_hyst)"
 	json_close_object
 
+	# a port that is down has its PHY powered down; carrier and speed
+	# only read while it is up
 	json_add_array ports
 	for p in $PORTS; do
 		port=${p%:*}
 		jack=${p#*:}
-		link=$(swconfig dev switch0 port $port get link 2>/dev/null)
+		n=/sys/class/net/$port
 		json_add_object
-		json_add_int port $port
+		json_add_string port $port
 		json_add_string jack $jack
-		json_add_boolean disabled \
-			"$(swconfig dev switch0 port $port get disable 2>/dev/null || echo 0)"
-		case "$link" in
-		*link:up*)
-			json_add_boolean link 1
-			link=${link#*speed:}
-			json_add_int speed "${link%%baseT*}"
-			;;
-		*)
+		if [ $(($(cat $n/flags) & 1)) = 0 ]; then
+			json_add_boolean disabled 1
 			json_add_boolean link 0
-			;;
-		esac
+		elif [ "$(cat $n/carrier 2>/dev/null)" = 1 ]; then
+			json_add_boolean disabled 0
+			json_add_boolean link 1
+			json_add_int speed "$(cat $n/speed)"
+		else
+			json_add_boolean disabled 0
+			json_add_boolean link 0
+		fi
 		json_close_object
 	done
 	json_close_array
@@ -124,15 +125,15 @@ set_port() {
 		return
 	fi
 	[ "$on" = 1 ] || on=0
-	swconfig dev switch0 port $port set disable $((!on))
-	logger -t ls1021aiot "LuCI: switch port $port $([ $on = 1 ] && echo on || echo off)"
-	echo "{\"port\":$port,\"on\":$([ $on = 1 ] && echo true || echo false)}"
+	ip link set dev $port $([ $on = 1 ] && echo up || echo down)
+	logger -t ls1021aiot "LuCI: $port $([ $on = 1 ] && echo up || echo down)"
+	echo "{\"port\":\"$port\",\"on\":$([ $on = 1 ] && echo true || echo false)}"
 }
 
 case "$1" in
 list)
 	echo '{"status":{},"history":{"points":720,"seconds":86400},' \
-	     '"set_port":{"port":0,"on":true}}'
+	     '"set_port":{"port":"lan2","on":true}}'
 	;;
 call)
 	read -r input

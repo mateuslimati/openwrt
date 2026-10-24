@@ -259,12 +259,16 @@ static const struct {
 	{ "0-0044", "%.3fV", "Trilho 1,0 V", "Trilho 1,0 V (INA220 0x44)" },
 };
 
-/* the switch ports in front panel order, and the LAN jack of each */
+/*
+ * The switch ports in front panel order: the DSA network interface of
+ * each LAN jack
+ */
 static const struct {
-	int port;
+	const char *ifname;
 	const char *jack;
 } ports[] = {
-	{ 3, "ETH2" }, { 2, "ETH3" }, { 1, "ETH4" }, { 0, "ETH5" },
+	{ "lan2", "ETH2" }, { "lan3", "ETH3" }, { "lan4", "ETH4" },
+	{ "lan5", "ETH5" },
 };
 
 static bool temp_text(int i, char *buf, size_t *len)
@@ -325,39 +329,42 @@ static bool fan_text(int i, char *buf, size_t *len)
 	return true;
 }
 
-static bool swconfig_get(int port, const char *attr, char *out, size_t len)
+static bool net_attr(int i, const char *attr, long *val)
 {
-	char cmd[80];
-	FILE *p;
-	bool ok;
+	char path[PATH_MAX];
 
-	snprintf(cmd, sizeof(cmd),
-		 "swconfig dev switch0 port %d get %s 2>/dev/null", port, attr);
-	p = popen(cmd, "r");
-	if (!p)
-		return false;
-	ok = fgets(out, len, p) != NULL;
-	return pclose(p) == 0 && ok;
+	snprintf(path, sizeof(path), "/sys/class/net/%s/%s", ports[i].ifname,
+		 attr);
+	return read_long(path, val);
 }
 
+/*
+ * A port that is down has its PHY powered down; carrier and speed only
+ * read while the interface is up.
+ */
 static bool port_text(int i, char *buf, size_t *len)
 {
-	char s[128], *speed;
+	long flags, carrier, speed;
+	char path[PATH_MAX];
+	FILE *f;
 
-	if (!swconfig_get(ports[i].port, "disable", s, sizeof(s)))
+	snprintf(path, sizeof(path), "/sys/class/net/%s/flags", ports[i].ifname);
+	f = fopen(path, "r");
+	if (!f)
 		return false;
-	if (atoi(s)) {
-		*len = snprintf(buf, TEXT_MAX, "desligada");
-		return true;
+	if (fscanf(f, "%li", &flags) != 1) {
+		fclose(f);
+		return false;
 	}
-	if (!swconfig_get(ports[i].port, "link", s, sizeof(s)))
-		return false;
-	speed = strstr(s, "speed:");
-	if (!strstr(s, "link:up") || !speed)
+	fclose(f);
+
+	if (!(flags & 1))	/* IFF_UP */
+		*len = snprintf(buf, TEXT_MAX, "desligada");
+	else if (!net_attr(i, "carrier", &carrier) || !carrier ||
+		 !net_attr(i, "speed", &speed) || speed <= 0)
 		*len = snprintf(buf, TEXT_MAX, "ligada, sem link");
 	else
-		*len = snprintf(buf, TEXT_MAX, "ligada, %d Mb/s",
-				atoi(speed + 6));
+		*len = snprintf(buf, TEXT_MAX, "ligada, %ld Mb/s", speed);
 	return true;
 }
 
@@ -365,9 +372,8 @@ static bool port_set(int i, bool on)
 {
 	char cmd[80];
 
-	snprintf(cmd, sizeof(cmd),
-		 "swconfig dev switch0 port %d set disable %d", ports[i].port,
-		 !on);
+	snprintf(cmd, sizeof(cmd), "ip link set dev %s %s", ports[i].ifname,
+		 on ? "up" : "down");
 	return system(cmd) == 0;
 }
 

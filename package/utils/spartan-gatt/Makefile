@@ -16,7 +16,7 @@ define Package/spartan-gatt
   SECTION:=utils
   CATEGORY:=Utilities
   TITLE:=Bluetooth LE GATT server for the LS1021A-IoT
-  DEPENDS:=@TARGET_layerscape_armv7 +kmod-bluetooth +ls1021aiot-kw41z +swconfig
+  DEPENDS:=@TARGET_layerscape_armv7 +kmod-bluetooth +ls1021aiot-kw41z
 endef
 
 define Package/spartan-gatt/description

@@ -12,7 +12,7 @@ define Package/luci-app-ls1021aiot
   CATEGORY:=LuCI
   SUBMENU:=3. Applications
   TITLE:=LuCI page of the LS1021A-IoT board
-  DEPENDS:=@TARGET_layerscape_armv7 +luci-base +rpcd +swconfig
+  DEPENDS:=@TARGET_layerscape_armv7 +luci-base +rpcd
   PKGARCH:=all
 endef
 

@@ -11,14 +11,12 @@ board=$(board_name)
 case "$board" in
 fsl,ls1021a-iot|\
 fsl,ls1021a-iot-sdboot)
-	# RTL8365MB ports 0-3: green on with link at any speed, orange
-	# blinking with traffic
-	for port in 0 1 2 3; do
-		mask=$(printf "0x%02x" $((1 << port)))
-		ucidef_set_led_switch "port${port}_link" "Port ${port} link" \
-			"rtl8365mb:green:port${port}" "switch0" "$mask" "0x0f" "link"
-		ucidef_set_led_switch "port${port}_act" "Port ${port} traffic" \
-			"rtl8365mb:orange:port${port}" "switch0" "$mask" "0x0f" "tx rx"
+	# the LAN jacks: green on with link, orange blinking with traffic
+	for n in 2 3 4 5; do
+		ucidef_set_led_netdev "lan${n}_link" "LAN ${n} link" \
+			"green:lan-${n}" "lan${n}" "link"
+		ucidef_set_led_netdev "lan${n}_act" "LAN ${n} traffic" \
+			"orange:lan-${n}" "lan${n}" "tx rx"
 	done
 	;;
 traverse,ten64)

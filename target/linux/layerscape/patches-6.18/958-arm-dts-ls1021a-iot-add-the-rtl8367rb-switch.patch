@@ -1,0 +1,196 @@
+From: Mateus Lima Alves <mateuslima.ti@gmail.com>
+Subject: [PATCH] ARM: dts: ls1021a-iot: add the RTL8367RB switch
+
+The RTL8367RB is managed over SPI on DSPI0 chip select 1 and serves the
+LAN jacks ETH2-ETH5 through eTSEC3 on its EXT1 RGMII port, the switch
+adding both RGMII clock delays. Describe it for the rtl8365mb DSA
+driver, naming each port after its jack, with the two LEDs of each jack
+(LED0 green, LED2 orange; LED1 is not connected).
+
+Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
+---
+--- a/arch/arm/boot/dts/nxp/ls/ls1021a-iot.dts
++++ b/arch/arm/boot/dts/nxp/ls/ls1021a-iot.dts
+@@ -6,6 +6,7 @@
+ 
+ /dts-v1/;
+ #include "ls1021a.dtsi"
++#include <dt-bindings/leds/common.h>
+ 
+ / {
+ 	model = "LS1021A-IOT Board";
+@@ -114,6 +115,174 @@
+ 			};
+ 		};
+ 	};
++};
++
++/*
++ * The RTL8367RB switch is managed over SPI, chip select 1. Its ports 0-3
++ * are the LAN jacks ETH5-ETH2; port 6 (EXT1) is the CPU port, RGMII to
++ * eTSEC3 with the switch adding both clock delays.
++ */
++&dspi0 {
++	bus-num = <0>;
++	status = "okay";
++
++	switch@1 {
++		compatible = "realtek,rtl8365mb";
++		reg = <1>;
++		spi-max-frequency = <1000000>;
++
++		ethernet-ports {
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			ethernet-port@0 {
++				reg = <0>;
++				label = "lan5";
++				phy-handle = <&swphy0>;
++
++				/* the jack only carries LED0 (green) and LED2 (orange) */
++				leds {
++					#address-cells = <1>;
++					#size-cells = <0>;
++
++					led@0 {
++						reg = <0>;
++						color = <LED_COLOR_ID_GREEN>;
++						function = LED_FUNCTION_LAN;
++						function-enumerator = <5>;
++						default-state = "keep";
++					};
++
++					led@2 {
++						reg = <2>;
++						color = <LED_COLOR_ID_ORANGE>;
++						function = LED_FUNCTION_LAN;
++						function-enumerator = <5>;
++						default-state = "keep";
++					};
++				};
++			};
++
++			ethernet-port@1 {
++				reg = <1>;
++				label = "lan4";
++				phy-handle = <&swphy1>;
++
++				/* the jack only carries LED0 (green) and LED2 (orange) */
++				leds {
++					#address-cells = <1>;
++					#size-cells = <0>;
++
++					led@0 {
++						reg = <0>;
++						color = <LED_COLOR_ID_GREEN>;
++						function = LED_FUNCTION_LAN;
++						function-enumerator = <4>;
++						default-state = "keep";
++					};
++
++					led@2 {
++						reg = <2>;
++						color = <LED_COLOR_ID_ORANGE>;
++						function = LED_FUNCTION_LAN;
++						function-enumerator = <4>;
++						default-state = "keep";
++					};
++				};
++			};
++
++			ethernet-port@2 {
++				reg = <2>;
++				label = "lan3";
++				phy-handle = <&swphy2>;
++
++				/* the jack only carries LED0 (green) and LED2 (orange) */
++				leds {
++					#address-cells = <1>;
++					#size-cells = <0>;
++
++					led@0 {
++						reg = <0>;
++						color = <LED_COLOR_ID_GREEN>;
++						function = LED_FUNCTION_LAN;
++						function-enumerator = <3>;
++						default-state = "keep";
++					};
++
++					led@2 {
++						reg = <2>;
++						color = <LED_COLOR_ID_ORANGE>;
++						function = LED_FUNCTION_LAN;
++						function-enumerator = <3>;
++						default-state = "keep";
++					};
++				};
++			};
++
++			ethernet-port@3 {
++				reg = <3>;
++				label = "lan2";
++				phy-handle = <&swphy3>;
++
++				/* the jack only carries LED0 (green) and LED2 (orange) */
++				leds {
++					#address-cells = <1>;
++					#size-cells = <0>;
++
++					led@0 {
++						reg = <0>;
++						color = <LED_COLOR_ID_GREEN>;
++						function = LED_FUNCTION_LAN;
++						function-enumerator = <2>;
++						default-state = "keep";
++					};
++
++					led@2 {
++						reg = <2>;
++						color = <LED_COLOR_ID_ORANGE>;
++						function = LED_FUNCTION_LAN;
++						function-enumerator = <2>;
++						default-state = "keep";
++					};
++				};
++			};
++
++			ethernet-port@6 {
++				reg = <6>;
++				ethernet = <&enet2>;
++				phy-mode = "rgmii";
++				tx-internal-delay-ps = <2000>;
++				rx-internal-delay-ps = <1200>;
++
++				fixed-link {
++					speed = <1000>;
++					full-duplex;
++				};
++			};
++		};
++
++		mdio {
++			compatible = "realtek,smi-mdio";
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			swphy0: ethernet-phy@0 {
++				reg = <0>;
++			};
++
++			swphy1: ethernet-phy@1 {
++				reg = <1>;
++			};
++
++			swphy2: ethernet-phy@2 {
++				reg = <2>;
++			};
++
++			swphy3: ethernet-phy@3 {
++				reg = <3>;
++			};
++		};
++	};
+ };
+ 
+ &enet0 {

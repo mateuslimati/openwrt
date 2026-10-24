@@ -8,7 +8,7 @@ Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
 ---
 --- a/arch/arm/boot/dts/nxp/ls/ls1021a-iot.dts
 +++ b/arch/arm/boot/dts/nxp/ls/ls1021a-iot.dts
-@@ -283,6 +283,21 @@
+@@ -370,6 +370,21 @@
  	};
  };
  
