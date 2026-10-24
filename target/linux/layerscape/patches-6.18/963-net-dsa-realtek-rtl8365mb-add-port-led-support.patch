@@ -1,0 +1,222 @@
+From: Mateus Lima Alves <mateuslima.ti@gmail.com>
+Subject: [PATCH] net: dsa: realtek: rtl8365mb: add port LED support
+
+Each port drives up to three LEDs, one per LED group, which the CPU can
+force on or off over their hardware mode: two bits per port in the CPU
+force LED registers from 0x1B08. Register every LED described under the
+leds node of a port as a LED class device driven that way, so it can
+follow any trigger, such as the netdev trigger of its port, like
+rtl8366rb does. LEDs that are not described keep their hardware mode.
+
+Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
+---
+--- a/drivers/net/dsa/realtek/Kconfig
++++ b/drivers/net/dsa/realtek/Kconfig
+@@ -44,6 +44,12 @@ config NET_DSA_REALTEK_RTL8365MB
+ 	  Select to enable support for Realtek RTL8365MB-VC, RTL8367S and
+ 	  RTL8367RB.
+ 
++config NET_DSA_REALTEK_RTL8365MB_LEDS
++	bool
++	depends on (LEDS_CLASS=y || LEDS_CLASS=NET_DSA_REALTEK_RTL8365MB)
++	depends on NET_DSA_REALTEK_RTL8365MB
++	default NET_DSA_REALTEK_RTL8365MB
++
+ config NET_DSA_REALTEK_RTL8366RB
+ 	tristate "Realtek RTL8366RB switch driver"
+ 	depends on NET_DSA_REALTEK_SMI || NET_DSA_REALTEK_MDIO
+--- a/drivers/net/dsa/realtek/Makefile
++++ b/drivers/net/dsa/realtek/Makefile
+@@ -25,3 +25,6 @@ rtl8365mb-objs := rtl8365mb_main.o \
+ 		  rtl8365mb_vlan.o \
+ 		  rtl8365mb_l2.o \
+ # end of rtl8365mb-objs
++ifdef CONFIG_NET_DSA_REALTEK_RTL8365MB_LEDS
++rtl8365mb-objs += rtl8365mb_leds.o
++endif
+--- /dev/null
++++ b/drivers/net/dsa/realtek/rtl8365mb_leds.c
+@@ -0,0 +1,142 @@
++// SPDX-License-Identifier: GPL-2.0
++/* Port LEDs of the rtl8365mb switch family
++ *
++ * Each port drives up to three LEDs, one per LED group. The CPU can force
++ * the LEDs of a port in a group on or off, overriding the mode that the LED
++ * configuration registers select: two bits per port, packed eight ports to
++ * a register. This driver registers every LED described in the device tree
++ * as a LED class device driven that way, so it can follow any trigger, such
++ * as the netdev trigger of its port. LEDs that are not described keep their
++ * hardware mode.
++ *
++ * Copyright (C) 2026 Mateus Lima Alves <mateuslima.ti@gmail.com>
++ */
++
++#include <linux/bitfield.h>
++#include <linux/leds.h>
++#include <linux/property.h>
++#include <linux/regmap.h>
++#include <net/dsa.h>
++
++#include "realtek.h"
++#include "rtl8365mb_leds.h"
++
++#define RTL8365MB_NUM_LED_GROUPS		3
++
++/* CPU force mode of the LED of a port in a group, 2 bits per port */
++#define RTL8365MB_CPU_FORCE_LED_REG(_group, _port) \
++		(0x1B08 + (_group) * 2 + (_port) / 8)
++#define   RTL8365MB_CPU_FORCE_LED_MASK(_port)	(0x3 << (((_port) % 8) * 2))
++#define   RTL8365MB_CPU_FORCE_LED_NORMAL	0
++#define   RTL8365MB_CPU_FORCE_LED_BLINK		1
++#define   RTL8365MB_CPU_FORCE_LED_OFF		2
++#define   RTL8365MB_CPU_FORCE_LED_ON		3
++
++struct rtl8365mb_led {
++	struct led_classdev cdev;
++	struct realtek_priv *priv;
++	int port;
++	u32 group;
++};
++
++static int rtl8365mb_led_force(struct rtl8365mb_led *led, u32 mode)
++{
++	u32 mask = RTL8365MB_CPU_FORCE_LED_MASK(led->port);
++
++	return regmap_update_bits(led->priv->map,
++				  RTL8365MB_CPU_FORCE_LED_REG(led->group,
++							      led->port),
++				  mask, mode << __bf_shf(mask));
++}
++
++static int rtl8365mb_led_brightness_set(struct led_classdev *cdev,
++					enum led_brightness brightness)
++{
++	struct rtl8365mb_led *led = container_of(cdev, struct rtl8365mb_led,
++						 cdev);
++
++	return rtl8365mb_led_force(led, brightness ?
++				   RTL8365MB_CPU_FORCE_LED_ON :
++				   RTL8365MB_CPU_FORCE_LED_OFF);
++}
++
++static int rtl8365mb_setup_led(struct realtek_priv *priv, struct dsa_port *dp,
++			       struct fwnode_handle *fwnode)
++{
++	struct led_init_data init_data = { };
++	enum led_default_state state;
++	struct rtl8365mb_led *led;
++	u32 group;
++	int ret;
++
++	ret = fwnode_property_read_u32(fwnode, "reg", &group);
++	if (ret)
++		return ret;
++
++	if (group >= RTL8365MB_NUM_LED_GROUPS) {
++		dev_warn(priv->dev, "invalid LED reg %u for port %d\n", group,
++			 dp->index);
++		return -EINVAL;
++	}
++
++	led = devm_kzalloc(priv->dev, sizeof(*led), GFP_KERNEL);
++	if (!led)
++		return -ENOMEM;
++
++	led->priv = priv;
++	led->port = dp->index;
++	led->group = group;
++
++	/* with "keep", the hardware mode stays until a trigger sets the LED */
++	state = led_init_default_state_get(fwnode);
++	if (state != LEDS_DEFSTATE_KEEP) {
++		led->cdev.brightness = state == LEDS_DEFSTATE_ON;
++		ret = rtl8365mb_led_brightness_set(&led->cdev,
++						   led->cdev.brightness);
++		if (ret)
++			return ret;
++	}
++
++	led->cdev.max_brightness = 1;
++	led->cdev.brightness_set_blocking = rtl8365mb_led_brightness_set;
++	init_data.fwnode = fwnode;
++
++	ret = devm_led_classdev_register_ext(priv->dev, &led->cdev,
++					     &init_data);
++	if (ret)
++		dev_warn(priv->dev, "failed to register LED %u of port %d\n",
++			 group, dp->index);
++
++	return ret;
++}
++
++int rtl8365mb_setup_leds(struct realtek_priv *priv)
++{
++	struct dsa_switch *ds = &priv->ds;
++	struct dsa_port *dp;
++	int ret = 0;
++
++	dsa_switch_for_each_user_port(dp, ds) {
++		struct device_node *leds_np;
++
++		if (!dp->dn)
++			continue;
++
++		leds_np = of_get_child_by_name(dp->dn, "leds");
++		if (!leds_np)
++			continue;
++
++		for_each_available_child_of_node_scoped(leds_np, led_np) {
++			ret = rtl8365mb_setup_led(priv, dp,
++						  of_fwnode_handle(led_np));
++			if (ret)
++				break;
++		}
++
++		of_node_put(leds_np);
++		if (ret)
++			return ret;
++	}
++
++	return 0;
++}
+--- /dev/null
++++ b/drivers/net/dsa/realtek/rtl8365mb_leds.h
+@@ -0,0 +1,17 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++
++#ifndef _REALTEK_RTL8365MB_LEDS_H
++#define _REALTEK_RTL8365MB_LEDS_H
++
++#include "realtek.h"
++
++#if IS_ENABLED(CONFIG_NET_DSA_REALTEK_RTL8365MB_LEDS)
++int rtl8365mb_setup_leds(struct realtek_priv *priv);
++#else
++static inline int rtl8365mb_setup_leds(struct realtek_priv *priv)
++{
++	return 0;
++}
++#endif
++
++#endif /* _REALTEK_RTL8365MB_LEDS_H */
+--- a/drivers/net/dsa/realtek/rtl8365mb_main.c
++++ b/drivers/net/dsa/realtek/rtl8365mb_main.c
+@@ -106,6 +106,7 @@
+ #include "realtek.h"
+ #include "realtek-smi.h"
+ #include "realtek-spi.h"
++#include "rtl8365mb_leds.h"
+ #include "realtek-mdio.h"
+ #include "rtl83xx.h"
+ #include "rtl8365mb_l2.h"
+@@ -3257,6 +3258,10 @@ static int rtl8365mb_setup(struct dsa_switch *ds)
+ 		goto out_teardown_irq;
+ 	}
+ 
++	ret = rtl8365mb_setup_leds(priv);
++	if (ret)
++		goto out_teardown_irq;
++
+ 	/* Start statistics counter polling */
+ 	ret = rtl8365mb_stats_setup(priv);
+ 	if (ret) {

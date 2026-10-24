@@ -1,0 +1,133 @@
+From: Mateus Lima Alves <mateuslima.ti@gmail.com>
+Subject: [PATCH] net: dsa: realtek: rtl8365mb: add the RTL8367RB
+
+The RTL8367RB (chip number 0x6000, version 0x1000) belongs to an older
+family than the chips this driver supports, but the registers it uses
+are the same, the indirect PHY access for registers 0-31 reaches the
+same address and it speaks the same CPU tag protocol. Add it with its
+two RGMII external interfaces and the init jam of the vendor rtl8367b
+driver, which also patches the PHYs.
+
+Unlike the newer chips, it reads its reset register as 0 while it
+resets and ignores writes until it is done, so polling that register
+ends at once and the whole setup is lost: every PHY then reads 0.
+Wait the full second that the Realtek documentation gives for the
+reset on this chip.
+
+Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
+---
+--- a/drivers/net/dsa/realtek/rtl8365mb_main.c
++++ b/drivers/net/dsa/realtek/rtl8365mb_main.c
+@@ -633,6 +633,63 @@ static const struct rtl8365mb_jam_tbl_entry rtl8365mb_init_jam_8365mb_vc[] = {
+ 	{ 0x13F0, 0x0000 },
+ };
+ 
++/* RTL8367RB (an older family than the chips above): the PHY patch and
++ * register setup of the vendor rtl8367b driver, as used by the OpenWrt
++ * rtl8367b driver
++ */
++static const struct rtl8365mb_jam_tbl_entry rtl8365mb_init_jam_8367rb[] = {
++	{ 0x1B03, 0x0876 }, { 0x1200, 0x7FC4 }, { 0x1305, 0xC000 },
++	{ 0x121E, 0x03CA }, { 0x1233, 0x0352 }, { 0x1234, 0x0064 },
++	{ 0x1237, 0x0096 }, { 0x1238, 0x0078 }, { 0x1239, 0x0084 },
++	{ 0x123A, 0x0030 }, { 0x205F, 0x0002 }, { 0x2059, 0x1A00 },
++	{ 0x205F, 0x0000 }, { 0x207F, 0x0002 }, { 0x2077, 0x0000 },
++	{ 0x2078, 0x0000 }, { 0x2079, 0x0000 }, { 0x207A, 0x0000 },
++	{ 0x207B, 0x0000 }, { 0x207F, 0x0000 }, { 0x205F, 0x0002 },
++	{ 0x2053, 0x0000 }, { 0x2054, 0x0000 }, { 0x2055, 0x0000 },
++	{ 0x2056, 0x0000 }, { 0x2057, 0x0000 }, { 0x205F, 0x0000 },
++	{ 0x133F, 0x0030 }, { 0x133E, 0x000E }, { 0x221F, 0x0005 },
++	{ 0x2205, 0x8B86 }, { 0x2206, 0x800E }, { 0x221F, 0x0000 },
++	{ 0x133F, 0x0010 }, { 0x12A3, 0x2200 }, { 0x6107, 0xE58B },
++	{ 0x6103, 0xA970 }, { 0x0018, 0x0F00 }, { 0x0038, 0x0F00 },
++	{ 0x0058, 0x0F00 }, { 0x0078, 0x0F00 }, { 0x0098, 0x0F00 },
++	{ 0x133F, 0x0030 }, { 0x133E, 0x000E }, { 0x221F, 0x0005 },
++	{ 0x2205, 0x8B6E }, { 0x2206, 0x0000 }, { 0x220F, 0x0100 },
++	{ 0x2205, 0xFFF6 }, { 0x2206, 0x0080 }, { 0x2205, 0x8000 },
++	{ 0x2206, 0x0280 }, { 0x2206, 0x2BF7 }, { 0x2206, 0x00E0 },
++	{ 0x2206, 0xFFF7 }, { 0x2206, 0xA080 }, { 0x2206, 0x02AE },
++	{ 0x2206, 0xF602 }, { 0x2206, 0x0153 }, { 0x2206, 0x0201 },
++	{ 0x2206, 0x6602 }, { 0x2206, 0x8044 }, { 0x2206, 0x0201 },
++	{ 0x2206, 0x7CE0 }, { 0x2206, 0x8B8C }, { 0x2206, 0xE18B },
++	{ 0x2206, 0x8D1E }, { 0x2206, 0x01E1 }, { 0x2206, 0x8B8E },
++	{ 0x2206, 0x1E01 }, { 0x2206, 0xA000 }, { 0x2206, 0xE4AE },
++	{ 0x2206, 0xD8EE }, { 0x2206, 0x85C0 }, { 0x2206, 0x00EE },
++	{ 0x2206, 0x85C1 }, { 0x2206, 0x00EE }, { 0x2206, 0x8AFC },
++	{ 0x2206, 0x07EE }, { 0x2206, 0x8AFD }, { 0x2206, 0x73EE },
++	{ 0x2206, 0xFFF6 }, { 0x2206, 0x00EE }, { 0x2206, 0xFFF7 },
++	{ 0x2206, 0xFC04 }, { 0x2206, 0xF8E0 }, { 0x2206, 0x8B8E },
++	{ 0x2206, 0xAD20 }, { 0x2206, 0x0302 }, { 0x2206, 0x8050 },
++	{ 0x2206, 0xFC04 }, { 0x2206, 0xF8F9 }, { 0x2206, 0xE08B },
++	{ 0x2206, 0x85AD }, { 0x2206, 0x2548 }, { 0x2206, 0xE08A },
++	{ 0x2206, 0xE4E1 }, { 0x2206, 0x8AE5 }, { 0x2206, 0x7C00 },
++	{ 0x2206, 0x009E }, { 0x2206, 0x35EE }, { 0x2206, 0x8AE4 },
++	{ 0x2206, 0x00EE }, { 0x2206, 0x8AE5 }, { 0x2206, 0x00E0 },
++	{ 0x2206, 0x8AFC }, { 0x2206, 0xE18A }, { 0x2206, 0xFDE2 },
++	{ 0x2206, 0x85C0 }, { 0x2206, 0xE385 }, { 0x2206, 0xC102 },
++	{ 0x2206, 0x2DAC }, { 0x2206, 0xAD20 }, { 0x2206, 0x12EE },
++	{ 0x2206, 0x8AE4 }, { 0x2206, 0x03EE }, { 0x2206, 0x8AE5 },
++	{ 0x2206, 0xB7EE }, { 0x2206, 0x85C0 }, { 0x2206, 0x00EE },
++	{ 0x2206, 0x85C1 }, { 0x2206, 0x00AE }, { 0x2206, 0x1115 },
++	{ 0x2206, 0xE685 }, { 0x2206, 0xC0E7 }, { 0x2206, 0x85C1 },
++	{ 0x2206, 0xAE08 }, { 0x2206, 0xEE85 }, { 0x2206, 0xC000 },
++	{ 0x2206, 0xEE85 }, { 0x2206, 0xC100 }, { 0x2206, 0xFDFC },
++	{ 0x2206, 0x0400 }, { 0x2205, 0xE142 }, { 0x2206, 0x0701 },
++	{ 0x2205, 0xE140 }, { 0x2206, 0x0405 }, { 0x220F, 0x0000 },
++	{ 0x221F, 0x0000 }, { 0x133E, 0x000E }, { 0x133F, 0x0010 },
++	{ 0x13EB, 0x11BB }, { 0x207F, 0x0002 }, { 0x2073, 0x1D22 },
++	{ 0x207F, 0x0000 }, { 0x133F, 0x0030 }, { 0x133E, 0x000E },
++	{ 0x2200, 0x1340 }, { 0x133E, 0x000E }, { 0x133F, 0x0010 },
++};
++
+ static const struct rtl8365mb_jam_tbl_entry rtl8365mb_init_jam_common[] = {
+ 	{ 0x1200, 0x7FCB }, { 0x0884, 0x0003 }, { 0x06EB, 0x0001 },
+ 	{ 0x03Fa, 0x0007 }, { 0x08C8, 0x00C0 }, { 0x0A30, 0x020E },
+@@ -710,6 +767,7 @@ struct rtl8365mb_chip_info {
+ 	const struct rtl8365mb_extint extints[RTL8365MB_MAX_NUM_EXTINTS];
+ 	const struct rtl8365mb_jam_tbl_entry *jam_table;
+ 	size_t jam_size;
++	unsigned int reset_delay_ms;
+ };
+ 
+ /* Chip info for each supported switch in the family */
+@@ -752,6 +810,20 @@ static const struct rtl8365mb_chip_info rtl8365mb_chip_infos[] = {
+ 		.jam_table = rtl8365mb_init_jam_8365mb_vc,
+ 		.jam_size = ARRAY_SIZE(rtl8365mb_init_jam_8365mb_vc),
+ 	},
++	{
++		.name = "RTL8367RB",
++		.chip_id = 0x6000,
++		.chip_ver = 0x1000,
++		.extints = {
++			{ 6, 1, PHY_INTF(MII) | PHY_INTF(TMII) |
++				PHY_INTF(RMII) | PHY_INTF(RGMII) },
++			{ 7, 2, PHY_INTF(MII) | PHY_INTF(TMII) |
++				PHY_INTF(RMII) | PHY_INTF(RGMII) },
++		},
++		.jam_table = rtl8365mb_init_jam_8367rb,
++		.jam_size = ARRAY_SIZE(rtl8365mb_init_jam_8367rb),
++		.reset_delay_ms = 1000,
++	},
+ 	{
+ 		.name = "RTL8367RB-VB",
+ 		.chip_id = 0x6367,
+@@ -2983,6 +3055,7 @@ static int rtl8365mb_switch_init(struct realtek_priv *priv)
+ 
+ static int rtl8365mb_reset_chip(struct realtek_priv *priv)
+ {
++	struct rtl8365mb *mb = priv->chip_data;
+ 	u32 val;
+ 
+ 	priv->write_reg_noack(priv, RTL8365MB_CHIP_RESET_REG,
+@@ -2990,8 +3063,10 @@ static int rtl8365mb_reset_chip(struct realtek_priv *priv)
+ 
+ 	/* Realtek documentation says the chip needs 1 second to reset. Sleep
+ 	 * for 100 ms before accessing any registers to prevent ACK timeouts.
++	 * Older chips read the reset register as 0 while they reset and
++	 * ignore writes until they are done: wait the whole time for them.
+ 	 */
+-	msleep(100);
++	msleep(mb->chip_info->reset_delay_ms ?: 100);
+ 	return regmap_read_poll_timeout(priv->map, RTL8365MB_CHIP_RESET_REG, val,
+ 					!(val & RTL8365MB_CHIP_RESET_HW_MASK),
+ 					20000, 1e6);

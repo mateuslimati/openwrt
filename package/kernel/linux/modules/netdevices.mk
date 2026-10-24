@@ -896,7 +896,8 @@ define KernelPackage/dsa-realtek
   KCONFIG:= \
 	CONFIG_NET_DSA_REALTEK \
 	CONFIG_NET_DSA_REALTEK_MDIO=y \
-	CONFIG_NET_DSA_REALTEK_SMI=y
+	CONFIG_NET_DSA_REALTEK_SMI=y \
+	CONFIG_NET_DSA_REALTEK_SPI=y
   FILES:= $(LINUX_DIR)/drivers/net/dsa/realtek/realtek_dsa.ko
 endef
 

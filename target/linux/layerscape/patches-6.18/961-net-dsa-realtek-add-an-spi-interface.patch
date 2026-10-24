@@ -1,0 +1,312 @@
+From: Mateus Lima Alves <mateuslima.ti@gmail.com>
+Subject: [PATCH] net: dsa: realtek: add an SPI interface
+
+Some Realtek switches are managed over a 4-wire SPI bus rather than SMI
+or MDIO, such as the RTL8367RB of the NXP LS1021A-IoT board: a write is
+0x02, A[15:8], A[7:0], D[15:8], D[7:0], a read is 0x03, A[15:8], A[7:0]
+followed by D[15:8], D[7:0], with chip select held throughout.
+
+Add realtek-spi, an interface driver with the register accessors for
+that protocol and the probe, remove and shutdown functions for an
+spi_driver, like realtek-mdio, and register rtl8365mb on it.
+
+Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
+---
+--- a/drivers/net/dsa/realtek/Kconfig
++++ b/drivers/net/dsa/realtek/Kconfig
+@@ -29,12 +29,20 @@ config NET_DSA_REALTEK_SMI
+ 	  Select to enable support for registering switches connected
+ 	  through SMI.
+ 
++config NET_DSA_REALTEK_SPI
++	bool "Realtek SPI interface support"
++	depends on OF && SPI
++	help
++	  Select to enable support for registering switches managed
++	  through SPI, such as the RTL8367RB on the NXP LS1021A-IoT board.
++
+ config NET_DSA_REALTEK_RTL8365MB
+ 	tristate "Realtek RTL8365MB switch driver"
+-	depends on NET_DSA_REALTEK_SMI || NET_DSA_REALTEK_MDIO
++	depends on NET_DSA_REALTEK_SMI || NET_DSA_REALTEK_MDIO || NET_DSA_REALTEK_SPI
+ 	select NET_DSA_TAG_RTL8_4
+ 	help
+-	  Select to enable support for Realtek RTL8365MB-VC and RTL8367S.
++	  Select to enable support for Realtek RTL8365MB-VC, RTL8367S and
++	  RTL8367RB.
+ 
+ config NET_DSA_REALTEK_RTL8366RB
+ 	tristate "Realtek RTL8366RB switch driver"
+--- a/drivers/net/dsa/realtek/Makefile
++++ b/drivers/net/dsa/realtek/Makefile
+@@ -10,6 +10,10 @@ ifdef CONFIG_NET_DSA_REALTEK_SMI
+ realtek_dsa-objs += realtek-smi.o
+ endif
+ 
++ifdef CONFIG_NET_DSA_REALTEK_SPI
++realtek_dsa-objs += realtek-spi.o
++endif
++
+ obj-$(CONFIG_NET_DSA_REALTEK_RTL8366RB) += rtl8366.o
+ rtl8366-objs 				:= rtl8366-core.o rtl8366rb.o
+ ifdef CONFIG_NET_DSA_REALTEK_RTL8366RB_LEDS
+--- /dev/null
++++ b/drivers/net/dsa/realtek/realtek-spi.c
+@@ -0,0 +1,139 @@
++// SPDX-License-Identifier: GPL-2.0+
++/* Realtek SPI interface driver
++ *
++ * Some Realtek switches, such as the RTL8367RB on the NXP LS1021A-IoT
++ * board, are managed over a 4-wire SPI bus instead of SMI or MDIO. Each
++ * register access is one transfer with chip select held throughout:
++ *
++ *   write: 0x02, A[15:8], A[7:0], D[15:8], D[7:0]
++ *   read:  0x03, A[15:8], A[7:0], then the switch shifts out D[15:8], D[7:0]
++ *
++ * This driver provides the register accessors for that protocol and the
++ * probe, remove and shutdown functions that the switch subdrivers use as
++ * their spi_driver callbacks, like realtek-mdio.c does for MDIO.
++ *
++ * Copyright (C) 2026 Mateus Lima Alves <mateuslima.ti@gmail.com>
++ */
++
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/regmap.h>
++#include <linux/spi/spi.h>
++
++#include "realtek.h"
++#include "realtek-spi.h"
++#include "rtl83xx.h"
++
++#define REALTEK_SPI_CMD_WRITE	0x02
++#define REALTEK_SPI_CMD_READ	0x03
++
++static int realtek_spi_write(void *ctx, u32 reg, u32 val)
++{
++	struct realtek_priv *priv = ctx;
++	struct spi_device *spi = to_spi_device(priv->dev);
++	u8 tx[5] = { REALTEK_SPI_CMD_WRITE, reg >> 8, reg, val >> 8, val };
++
++	return spi_write(spi, tx, sizeof(tx));
++}
++
++static int realtek_spi_read(void *ctx, u32 reg, u32 *val)
++{
++	struct realtek_priv *priv = ctx;
++	struct spi_device *spi = to_spi_device(priv->dev);
++	u8 tx[3] = { REALTEK_SPI_CMD_READ, reg >> 8, reg };
++	u8 rx[2];
++	int ret;
++
++	/* one message: the chip select stays asserted between tx and rx */
++	ret = spi_write_then_read(spi, tx, sizeof(tx), rx, sizeof(rx));
++	if (ret)
++		return ret;
++
++	*val = rx[0] << 8 | rx[1];
++
++	return 0;
++}
++
++static const struct realtek_interface_info realtek_spi_info = {
++	.reg_read = realtek_spi_read,
++	.reg_write = realtek_spi_write,
++};
++
++/**
++ * realtek_spi_probe() - Probe an SPI device for an SPI-managed switch
++ * @spi: spi_device to probe on.
++ *
++ * This function should be used as the .probe in an spi_driver. After
++ * calling the common probe function for all interfaces, it sets the
++ * accessor used for writes that the switch does not acknowledge, such as
++ * the chip reset, which is a plain write over SPI. Finally, it calls a
++ * common function to register the DSA switch.
++ *
++ * Context: Can sleep. Takes and releases priv->map_lock.
++ * Return: Returns 0 on success, a negative error on failure.
++ */
++int realtek_spi_probe(struct spi_device *spi)
++{
++	struct device *dev = &spi->dev;
++	struct realtek_priv *priv;
++	int ret;
++
++	priv = rtl83xx_probe(dev, &realtek_spi_info);
++	if (IS_ERR(priv))
++		return PTR_ERR(priv);
++
++	priv->write_reg_noack = realtek_spi_write;
++
++	ret = rtl83xx_register_switch(priv);
++	if (ret) {
++		rtl83xx_remove(priv);
++		return ret;
++	}
++
++	return 0;
++}
++EXPORT_SYMBOL_NS_GPL(realtek_spi_probe, "REALTEK_DSA");
++
++/**
++ * realtek_spi_remove() - Remove the driver of an SPI-managed switch
++ * @spi: spi_device to be removed.
++ *
++ * This function should be used as the .remove in an spi_driver. First it
++ * unregisters the DSA switch and then it calls the common remove function.
++ *
++ * Context: Can sleep.
++ * Return: Nothing.
++ */
++void realtek_spi_remove(struct spi_device *spi)
++{
++	struct realtek_priv *priv = spi_get_drvdata(spi);
++
++	if (!priv)
++		return;
++
++	rtl83xx_unregister_switch(priv);
++
++	rtl83xx_remove(priv);
++}
++EXPORT_SYMBOL_NS_GPL(realtek_spi_remove, "REALTEK_DSA");
++
++/**
++ * realtek_spi_shutdown() - Shutdown the driver of an SPI-managed switch
++ * @spi: spi_device shutting down.
++ *
++ * This function should be used as the .shutdown in an spi_driver. It calls
++ * the common shutdown function.
++ *
++ * Context: Can sleep.
++ * Return: Nothing.
++ */
++void realtek_spi_shutdown(struct spi_device *spi)
++{
++	struct realtek_priv *priv = spi_get_drvdata(spi);
++
++	if (!priv)
++		return;
++
++	rtl83xx_shutdown(priv);
++}
++EXPORT_SYMBOL_NS_GPL(realtek_spi_shutdown, "REALTEK_DSA");
+--- /dev/null
++++ b/drivers/net/dsa/realtek/realtek-spi.h
+@@ -0,0 +1,50 @@
++/* SPDX-License-Identifier: GPL-2.0+ */
++
++#ifndef _REALTEK_SPI_H
++#define _REALTEK_SPI_H
++
++#include <linux/spi/spi.h>
++
++#if IS_ENABLED(CONFIG_NET_DSA_REALTEK_SPI)
++
++static inline int realtek_spi_driver_register(struct spi_driver *drv)
++{
++	return spi_register_driver(drv);
++}
++
++static inline void realtek_spi_driver_unregister(struct spi_driver *drv)
++{
++	spi_unregister_driver(drv);
++}
++
++int realtek_spi_probe(struct spi_device *spi);
++void realtek_spi_remove(struct spi_device *spi);
++void realtek_spi_shutdown(struct spi_device *spi);
++
++#else /* IS_ENABLED(CONFIG_NET_DSA_REALTEK_SPI) */
++
++static inline int realtek_spi_driver_register(struct spi_driver *drv)
++{
++	return 0;
++}
++
++static inline void realtek_spi_driver_unregister(struct spi_driver *drv)
++{
++}
++
++static inline int realtek_spi_probe(struct spi_device *spi)
++{
++	return -ENOENT;
++}
++
++static inline void realtek_spi_remove(struct spi_device *spi)
++{
++}
++
++static inline void realtek_spi_shutdown(struct spi_device *spi)
++{
++}
++
++#endif /* IS_ENABLED(CONFIG_NET_DSA_REALTEK_SPI) */
++
++#endif /* _REALTEK_SPI_H */
+--- a/drivers/net/dsa/realtek/rtl8365mb_main.c
++++ b/drivers/net/dsa/realtek/rtl8365mb_main.c
+@@ -105,6 +105,7 @@
+ 
+ #include "realtek.h"
+ #include "realtek-smi.h"
++#include "realtek-spi.h"
+ #include "realtek-mdio.h"
+ #include "rtl83xx.h"
+ #include "rtl8365mb_l2.h"
+@@ -3360,6 +3361,23 @@ static struct platform_driver rtl8365mb_smi_driver = {
+ 	.shutdown = realtek_smi_shutdown,
+ };
+ 
++static const struct spi_device_id rtl8365mb_spi_ids[] = {
++	{ "rtl8365mb" },
++	{ /* sentinel */ },
++};
++MODULE_DEVICE_TABLE(spi, rtl8365mb_spi_ids);
++
++static struct spi_driver rtl8365mb_spi_driver = {
++	.driver = {
++		.name = "rtl8365mb-spi",
++		.of_match_table = rtl8365mb_of_match,
++	},
++	.id_table = rtl8365mb_spi_ids,
++	.probe  = realtek_spi_probe,
++	.remove = realtek_spi_remove,
++	.shutdown = realtek_spi_shutdown,
++};
++
+ static struct mdio_driver rtl8365mb_mdio_driver = {
+ 	.mdiodrv.driver = {
+ 		.name = "rtl8365mb-mdio",
+@@ -3379,17 +3397,26 @@ static int rtl8365mb_init(void)
+ 		return ret;
+ 
+ 	ret = realtek_smi_driver_register(&rtl8365mb_smi_driver);
+-	if (ret) {
+-		realtek_mdio_driver_unregister(&rtl8365mb_mdio_driver);
+-		return ret;
+-	}
++	if (ret)
++		goto err_smi;
++
++	ret = realtek_spi_driver_register(&rtl8365mb_spi_driver);
++	if (ret)
++		goto err_spi;
+ 
+ 	return 0;
++
++err_spi:
++	realtek_smi_driver_unregister(&rtl8365mb_smi_driver);
++err_smi:
++	realtek_mdio_driver_unregister(&rtl8365mb_mdio_driver);
++	return ret;
+ }
+ module_init(rtl8365mb_init);
+ 
+ static void __exit rtl8365mb_exit(void)
+ {
++	realtek_spi_driver_unregister(&rtl8365mb_spi_driver);
+ 	realtek_smi_driver_unregister(&rtl8365mb_smi_driver);
+ 	realtek_mdio_driver_unregister(&rtl8365mb_mdio_driver);
+ }
