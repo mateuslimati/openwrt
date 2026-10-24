@@ -1,0 +1,85 @@
+From: Mateus Lima Alves <mateuslima.ti@gmail.com>
+Subject: [PATCH] net: phy: rtl8367b: power down a port PHY
+
+Add a "disable" port attribute that powers the PHY of a switch port down
+(BMCR_PDOWN) or up again, so a port can be switched off without
+unplugging its cable. Only the PHY ports 0-4 have a PHY, at the address
+of the port; the other ports refuse it. The PHY powers up again at the
+next switch reset.
+
+Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
+---
+--- a/drivers/net/phy/rtl8367b.c
++++ b/drivers/net/phy/rtl8367b.c
+@@ -16,6 +16,7 @@
+ #include <linux/of_platform.h>
+ #include <linux/delay.h>
+ #include <linux/leds.h>
++#include <linux/mii.h>
+ #include <linux/skbuff.h>
+ #include <linux/rtl8367.h>
+ 
+@@ -1375,6 +1376,49 @@
+ 				RTL8367B_MIB_CTRL0_PORT_RESET_MASK(port % 8));
+ }
+ 
++/* the PHY ports 0-4 have the PHY of the same address */
++static int rtl8367b_sw_get_port_disable(struct switch_dev *dev,
++				       const struct switch_attr *attr,
++				       struct switch_val *val)
++{
++	struct rtl8366_smi *smi = sw_to_rtl8366_smi(dev);
++	u32 bmcr;
++	int err;
++
++	if (val->port_vlan > 4)
++		return -EINVAL;
++
++	err = rtl8367b_read_phy_reg(smi, val->port_vlan, MII_BMCR, &bmcr);
++	if (err)
++		return err;
++
++	val->value.i = !!(bmcr & BMCR_PDOWN);
++	return 0;
++}
++
++static int rtl8367b_sw_set_port_disable(struct switch_dev *dev,
++				       const struct switch_attr *attr,
++				       struct switch_val *val)
++{
++	struct rtl8366_smi *smi = sw_to_rtl8366_smi(dev);
++	u32 bmcr;
++	int err;
++
++	if (val->port_vlan > 4)
++		return -EINVAL;
++
++	err = rtl8367b_read_phy_reg(smi, val->port_vlan, MII_BMCR, &bmcr);
++	if (err)
++		return err;
++
++	if (val->value.i)
++		bmcr |= BMCR_PDOWN;
++	else
++		bmcr &= ~BMCR_PDOWN;
++
++	return rtl8367b_write_phy_reg(smi, val->port_vlan, MII_BMCR, bmcr);
++}
++
+ static int rtl8367b_sw_get_port_stats(struct switch_dev *dev, int port,
+                                         struct switch_port_stats *stats)
+ {
+@@ -1428,6 +1472,13 @@
+ 		.max = 33,
+ 		.set = NULL,
+ 		.get = rtl8366_sw_get_port_mib,
++	}, {
++		.type = SWITCH_TYPE_INT,
++		.name = "disable",
++		.description = "Power down the port PHY (PHY ports only)",
++		.max = 1,
++		.set = rtl8367b_sw_set_port_disable,
++		.get = rtl8367b_sw_get_port_disable,
+ 	},
+ };
+ 
