@@ -1,0 +1,32 @@
+From: Mateus Lima Alves <mateuslima.ti@gmail.com>
+Subject: [PATCH] ARM: dts: ls1021a-iot: add the system CPLD
+
+The CPLD on IFC chip select 0 drives LED0, the Arduino shield reset and
+the HDMI sync regeneration, and reads the SW2 DIP switches.
+
+Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
+---
+--- a/arch/arm/boot/dts/nxp/ls/ls1021a-iot.dts
++++ b/arch/arm/boot/dts/nxp/ls/ls1021a-iot.dts
+@@ -283,6 +283,21 @@
+ 	};
+ };
+ 
++&ifc {
++	#address-cells = <2>;
++	#size-cells = <1>;
++	/* CS0: system CPLD, window set up by U-Boot */
++	ranges = <0x0 0x0 0x0 0x7fb00000 0x00010000>;
++	status = "okay";
++
++	cpld@0,0 {
++		compatible = "fsl,ls1021aiot-cpld";
++		reg = <0x0 0x0 0x10000>;
++		label = "ls1021aiot:green:led0";
++		linux,default-trigger = "timer";
++	};
++};
++
+ &lpuart0 {
+ 	status = "okay";
+ };
