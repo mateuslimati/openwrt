@@ -1,0 +1,39 @@
+From: Mateus Lima Alves <mateuslima.ti@gmail.com>
+Subject: [PATCH] ARM: dts: ls1021a-iot: run the eTSECs without cache snooping
+
+The eTSECs of the LS1021A rev 1.0 hang on transmit under load when they
+snoop the caches. Drop dma-coherent, as the NXP SDK runs them, so the
+DMA API does the cache maintenance (with the gianfar change that stops
+setting the snoop bits on non-coherent nodes).
+
+Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
+---
+--- a/arch/arm/boot/dts/nxp/ls/ls1021a-iot.dts
++++ b/arch/arm/boot/dts/nxp/ls/ls1021a-iot.dts
+@@ -106,6 +106,8 @@
+ };
+ 
+ &enet0 {
++	/* LS1021A rev 1.0: no cache snooping, like the NXP SDK */
++	/delete-property/ dma-coherent;
+ 	tbi-handle = <&tbi1>;
+ 	phy-handle = <&phy1>;
+ 	phy-connection-type = "sgmii";
+@@ -113,6 +115,8 @@
+ };
+ 
+ &enet1 {
++	/* LS1021A rev 1.0: no cache snooping, like the NXP SDK */
++	/delete-property/ dma-coherent;
+ 	tbi-handle = <&tbi1>;
+ 	phy-handle = <&phy3>;
+ 	phy-connection-type = "sgmii";
+@@ -120,6 +124,8 @@
+ };
+ 
+ &enet2 {
++	/* LS1021A rev 1.0: no cache snooping, like the NXP SDK */
++	/delete-property/ dma-coherent;
+ 	fixed-link = <0 1 1000 0 0>;
+ 	phy-connection-type = "rgmii-id";
+ 	status = "okay";
