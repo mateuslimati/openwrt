@@ -1,0 +1,89 @@
+From: Mateus Lima Alves <mateuslima.ti@gmail.com>
+Subject: [PATCH] ASoC: fsl_sai: support a big-endian FIFO
+
+The LS1021A SAI is big-endian, its FIFO data registers too: a 16-bit DMA
+access to TDR/RDR lands in bits 31:16, while the SAI shifts out and in
+bits 15:0 for 16-bit words, so playback sends silence and capture reads
+zeros. With "fsl,big-endian-fifo", offer big-endian sample formats and
+set the first bit shifted to 31. Let the SGTL5000 accept big-endian
+memory formats, since it only cares about the width on the wire.
+
+Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
+---
+--- a/sound/soc/fsl/fsl_sai.h
++++ b/sound/soc/fsl/fsl_sai.h
+@@ -10,6 +10,13 @@
+ #include <sound/dmaengine_pcm.h>
+ 
+ #define FAL_SAI_NUM_RATES  20
++/*
++ * Big-endian FIFO (LS1021A): a 16-bit DMA access to the 32-bit data register
++ * lands in its upper half, so samples are big-endian and MSB-aligned to bit 31.
++ */
++#define FSL_SAI_FORMATS_BE (SNDRV_PCM_FMTBIT_S16_BE |\
++			    SNDRV_PCM_FMTBIT_S32_BE)
++
+ #define FSL_SAI_FORMATS (SNDRV_PCM_FMTBIT_S16_LE |\
+ 			 SNDRV_PCM_FMTBIT_S20_3LE |\
+ 			 SNDRV_PCM_FMTBIT_S24_LE |\
+@@ -286,6 +293,7 @@
+ 
+ 	bool is_consumer_mode[2];
+ 	bool is_lsb_first;
++	bool is_big_endian_fifo;
+ 	bool is_dsp_mode[2];
+ 	bool is_pdm_mode;
+ 	bool is_multi_fifo_dma;
+--- a/sound/soc/fsl/fsl_sai.c
++++ b/sound/soc/fsl/fsl_sai.c
+@@ -639,6 +639,8 @@
+ 
+ 	if (sai->is_lsb_first)
+ 		val_cr5 |= FSL_SAI_CR5_FBT(0);
++	else if (sai->is_big_endian_fifo)
++		val_cr5 |= FSL_SAI_CR5_FBT(31);
+ 	else
+ 		val_cr5 |= FSL_SAI_CR5_FBT(word_width - 1);
+ 
+@@ -1459,6 +1461,7 @@
+ 	sai->soc_data = of_device_get_match_data(dev);
+ 
+ 	sai->is_lsb_first = of_property_read_bool(np, "lsb-first");
++	sai->is_big_endian_fifo = of_property_read_bool(np, "fsl,big-endian-fifo");
+ 
+ 	base = devm_platform_get_and_ioremap_resource(pdev, 0, &sai->res);
+ 	if (IS_ERR(base))
+@@ -1537,6 +1540,13 @@
+ 	memcpy(&sai->cpu_dai_drv, fsl_sai_dai_template,
+ 	       sizeof(*fsl_sai_dai_template) * ARRAY_SIZE(fsl_sai_dai_template));
+ 
++	if (sai->is_big_endian_fifo) {
++		for (i = 0; i < ARRAY_SIZE(fsl_sai_dai_template); i++) {
++			sai->cpu_dai_drv[i].playback.formats = FSL_SAI_FORMATS_BE;
++			sai->cpu_dai_drv[i].capture.formats = FSL_SAI_FORMATS_BE;
++		}
++	}
++
+ 	/* Sync Tx with Rx as default by following old DT binding */
+ 	sai->synchronous[RX] = true;
+ 	sai->synchronous[TX] = false;
+--- a/sound/soc/codecs/sgtl5000.c
++++ b/sound/soc/codecs/sgtl5000.c
+@@ -1153,10 +1153,16 @@
+ 	return 0;
+ }
+ 
++/*
++ * The codec only sees the sample width on the wire; also accept big-endian
++ * memory formats for CPU DAIs with a big-endian FIFO, such as the LS1021A SAI.
++ */
+ #define SGTL5000_FORMATS (SNDRV_PCM_FMTBIT_S16_LE |\
+ 			SNDRV_PCM_FMTBIT_S20_3LE |\
+ 			SNDRV_PCM_FMTBIT_S24_LE |\
+-			SNDRV_PCM_FMTBIT_S32_LE)
++			SNDRV_PCM_FMTBIT_S32_LE |\
++			SNDRV_PCM_FMTBIT_S16_BE |\
++			SNDRV_PCM_FMTBIT_S32_BE)
+ 
+ static const struct snd_soc_dai_ops sgtl5000_ops = {
+ 	.hw_params = sgtl5000_pcm_hw_params,

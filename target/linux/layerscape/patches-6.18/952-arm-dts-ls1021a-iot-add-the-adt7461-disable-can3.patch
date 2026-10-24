@@ -1,0 +1,38 @@
+From: Mateus Lima Alves <mateuslima.ti@gmail.com>
+Subject: [PATCH] ARM: dts: ls1021a-iot: add the ADT7461, disable CAN3
+
+The ADT7461 at 0x4c measures the board and the LS1021A die; its THERM
+output switches the fan through the CPLD. The CAN3 balls are not
+connected on this board.
+
+Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
+---
+--- a/arch/arm/boot/dts/nxp/ls/ls1021a-iot.dts
++++ b/arch/arm/boot/dts/nxp/ls/ls1021a-iot.dts
+@@ -74,8 +74,9 @@
+ 	status = "disabled";
+ };
+ 
++/* the CAN3 balls are not connected on this board */
+ &can3 {
+-	status = "okay";
++	status = "disabled";
+ };
+ 
+ &dcu {
+@@ -178,6 +179,15 @@
+ 		compatible = "national,lm75b";
+ 		reg = <0x48>;
+ 	};
++
++	/*
++	 * Local and LS1021A die (remote) temperatures; its THERM output
++	 * switches the fan through the CPLD.
++	 */
++	adt7461: temperature-sensor@4c {
++		compatible = "adi,adt7461a";
++		reg = <0x4c>;
++	};
+ };
+ 
+ &lpuart0 {

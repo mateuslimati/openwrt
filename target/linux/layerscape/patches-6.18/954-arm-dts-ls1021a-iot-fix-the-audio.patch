@@ -1,0 +1,55 @@
+From: Mateus Lima Alves <mateuslima.ti@gmail.com>
+Subject: [PATCH] ARM: dts: ls1021a-iot: fix the audio
+
+The SAI2 registers and FIFO are big-endian: without it the SGTL5000
+gets silence and capture returns zeros. Give the codec its 1.8 V VDDD
+supply, so it does not turn on its internal LDO (erratum ER1), which
+fails on this board, and name the card.
+
+Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
+---
+--- a/arch/arm/boot/dts/nxp/ls/ls1021a-iot.dts
++++ b/arch/arm/boot/dts/nxp/ls/ls1021a-iot.dts
+@@ -25,6 +25,15 @@
+ 		regulator-always-on;
+ 	};
+ 
++	/* SGTL5000 VDDD: with it, the codec keeps its internal LDO off */
++	reg_1p8v: regulator-1V8 {
++		compatible = "regulator-fixed";
++		regulator-name = "1P8V";
++		regulator-min-microvolt = <1800000>;
++		regulator-max-microvolt = <1800000>;
++		regulator-always-on;
++	};
++
+ 	reg_2p5v: regulator-2V5 {
+ 		compatible = "regulator-fixed";
+ 		regulator-name = "2P5V";
+@@ -35,6 +44,7 @@
+ 
+ 	sound {
+ 		compatible = "simple-audio-card";
++		simple-audio-card,name = "LS1021A-IoT SGTL5000";
+ 		simple-audio-card,format = "i2s";
+ 		simple-audio-card,widgets =
+ 			"Microphone", "Microphone Jack",
+@@ -154,6 +164,7 @@
+ 		reg = <0x2a>;
+ 		VDDA-supply = <&reg_3p3v>;
+ 		VDDIO-supply = <&reg_2p5v>;
++		VDDD-supply = <&reg_1p8v>;
+ 		clocks = <&sys_mclk>;
+ 	};
+ 
+@@ -231,6 +242,10 @@
+ };
+ 
+ &sai2 {
++	/* the LS1021A SAI registers are big-endian, like the DCU and eDMA */
++	big-endian;
++	/* and so is its FIFO data */
++	fsl,big-endian-fifo;
+ 	status = "okay";
+ };
+ 
