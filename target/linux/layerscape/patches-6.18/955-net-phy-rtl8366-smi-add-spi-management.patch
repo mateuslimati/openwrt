@@ -1,0 +1,146 @@
+From: Mateus Lima Alves <mateuslima.ti@gmail.com>
+Subject: [PATCH] net: phy: rtl8366_smi: add SPI management
+
+The RTL8365MB of the LS1021A-IoT is managed over SPI rather than SMI or
+MDIO: write 0x02 A15:8 A7:0 D15:8 D7:0, read 0x03 A15:8 A7:0 followed by
+D15:8 D7:0. Let the switch node point to that SPI device with a
+"realtek,spi" phandle and use it for register access.
+
+Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
+---
+--- a/drivers/net/phy/rtl8366_smi.c
++++ b/drivers/net/phy/rtl8366_smi.c
+@@ -19,6 +19,7 @@
+ #include <linux/version.h>
+ #include <linux/of_mdio.h>
+ #include <linux/platform_device.h>
++#include <linux/spi/spi.h>
+ 
+ #ifdef CONFIG_RTL8366_SMI_DEBUG_FS
+ #include <linux/debugfs.h>
+@@ -328,9 +329,40 @@ static int __rtl8366_mdio_write_reg(struct rtl8366_smi *smi, u32 addr, u32 data)
+ 	return 0;
+ }
+ 
++/*
++ * Management over SPI, as on the LS1021A-IoT: write 0x02 A15:8 A7:0 D15:8
++ * D7:0, read 0x03 A15:8 A7:0 then D15:8 D7:0, chip select held throughout.
++ */
++#define RTL8366_SPI_CMD_WRITE		0x02
++#define RTL8366_SPI_CMD_READ		0x03
++
++static int __rtl8366_spi_read_reg(struct rtl8366_smi *smi, u32 addr, u32 *data)
++{
++	u8 tx[3] = { RTL8366_SPI_CMD_READ, addr >> 8, addr & 0xff };
++	u8 rx[2];
++	int ret;
++
++	ret = spi_write_then_read(smi->ext_spi, tx, sizeof(tx), rx, sizeof(rx));
++	if (ret)
++		return ret;
++
++	*data = (rx[0] << 8) | rx[1];
++	return 0;
++}
++
++static int __rtl8366_spi_write_reg(struct rtl8366_smi *smi, u32 addr, u32 data)
++{
++	u8 tx[5] = { RTL8366_SPI_CMD_WRITE, addr >> 8, addr & 0xff,
++		     data >> 8, data & 0xff };
++
++	return spi_write(smi->ext_spi, tx, sizeof(tx));
++}
++
+ int rtl8366_smi_read_reg(struct rtl8366_smi *smi, u32 addr, u32 *data)
+ {
+-	if (smi->ext_mbus)
++	if (smi->ext_spi)
++		return __rtl8366_spi_read_reg(smi, addr, data);
++	else if (smi->ext_mbus)
+ 		return __rtl8366_mdio_read_reg(smi, addr, data);
+ 	else
+ 		return __rtl8366_smi_read_reg(smi, addr, data);
+@@ -386,7 +418,9 @@ static int __rtl8366_smi_write_reg(struct rtl8366_smi *smi,
+ 
+ int rtl8366_smi_write_reg(struct rtl8366_smi *smi, u32 addr, u32 data)
+ {
+-	if (smi->ext_mbus)
++	if (smi->ext_spi)
++		return __rtl8366_spi_write_reg(smi, addr, data);
++	else if (smi->ext_mbus)
+ 		return __rtl8366_mdio_write_reg(smi, addr, data);
+ 	else
+ 		return __rtl8366_smi_write_reg(smi, addr, data, true);
+@@ -395,6 +429,8 @@ EXPORT_SYMBOL_GPL(rtl8366_smi_write_reg);
+ 
+ int rtl8366_smi_write_reg_noack(struct rtl8366_smi *smi, u32 addr, u32 data)
+ {
++	if (smi->ext_spi)
++		return __rtl8366_spi_write_reg(smi, addr, data);
+ 	return __rtl8366_smi_write_reg(smi, addr, data, false);
+ }
+ EXPORT_SYMBOL_GPL(rtl8366_smi_write_reg_noack);
+@@ -1377,6 +1413,11 @@ static void __rtl8366_smi_cleanup(struct rtl8366_smi *smi)
+ {
+ 	if (smi->hw_reset)
+ 		smi->hw_reset(smi, true);
++
++	if (smi->ext_spi) {
++		put_device(&smi->ext_spi->dev);
++		smi->ext_spi = NULL;
++	}
+ }
+ 
+ int rtl8366_smi_init(struct rtl8366_smi *smi)
+@@ -1390,7 +1431,10 @@ int rtl8366_smi_init(struct rtl8366_smi *smi)
+ 	if (err)
+ 		goto err_out;
+ 
+-	if (smi->ext_mbus)
++	if (smi->ext_spi)
++		dev_info(smi->parent, "using SPI device '%s'\n",
++			 dev_name(&smi->ext_spi->dev));
++	else if (smi->ext_mbus)
+ 		dev_info(smi->parent, "using MDIO bus '%s'\n", smi->ext_mbus->name);
+ 
+ 	err = smi->ops->detect(smi);
+@@ -1455,7 +1499,20 @@ static int rtl8366_smi_probe_of(struct platform_device *pdev, struct rtl8366_smi
+ {
+ 	struct gpio_desc *sck, *sda;
+ 	struct device_node *np = pdev->dev.of_node;
+-	struct device_node *mdio_node;
++	struct device_node *mdio_node, *spi_node;
++
++	spi_node = of_parse_phandle(np, "realtek,spi", 0);
++	if (spi_node) {
++		struct device *dev;
++
++		/* holds a reference, dropped in __rtl8366_smi_cleanup() */
++		dev = bus_find_device_by_of_node(&spi_bus_type, spi_node);
++		of_node_put(spi_node);
++		if (!dev)
++			return -EPROBE_DEFER;
++		smi->ext_spi = to_spi_device(dev);
++		return 0;
++	}
+ 
+ 	mdio_node = of_parse_phandle(np, "mii-bus", 0);
+ 	if (!mdio_node) {
+--- a/drivers/net/phy/rtl8366_smi.h
++++ b/drivers/net/phy/rtl8366_smi.h
+@@ -19,6 +19,7 @@
+ struct rtl8366_smi_ops;
+ struct rtl8366_vlan_ops;
+ struct mii_bus;
++struct spi_device;
+ struct dentry;
+ struct inode;
+ struct file;
+@@ -78,6 +79,7 @@ struct rtl8366_smi {
+ 	u32			phy_id;
+ 	rtl8367b_chip_t		rtl8367b_chip;
+ 	struct mii_bus		*ext_mbus;
++	struct spi_device	*ext_spi;
+ 	struct rtl8366_vlan_mc *emu_vlanmc;
+ };
+ 

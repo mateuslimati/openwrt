@@ -5,6 +5,17 @@
 board_config_update
 
 case "$(board_name)" in
+	fsl,ls1021a-iot|\
+	fsl,ls1021a-iot-sdboot)
+		# eth2 is the CPU port of the RTL8365MB switch (EXT1, port 6,
+		# untagged) and joins an existing network, eth0 is the SGMII
+		# port. Describing the switch keeps all its ports in VLAN 1 (the
+		# rtl8367b driver isolates them) and tells LuCI its topology.
+		ucidef_set_interface_lan "eth2" "dhcp"
+		ucidef_set_interface_wan "eth0"
+		ucidef_add_switch "switch0" \
+			"0:lan" "1:lan" "2:lan" "3:lan" "4:lan" "6u@eth2"
+		;;
 	fsl,ls1028a-rdb|\
 	fsl,ls1028a-rdb-sdboot)
 		ucidef_set_interfaces_lan_wan "swp0 swp1 swp2 swp3" "eth0"

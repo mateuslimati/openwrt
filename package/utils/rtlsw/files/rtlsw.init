@@ -1,0 +1,9 @@
+#!/bin/sh /etc/rc.common
+# Liga a porta da CPU no switch (EXT1 <-> eth2) antes da rede subir.
+# O RTL8365MB volta ao padrao a cada reset da placa.
+
+START=19
+
+start() {
+	rtlsw init | logger -t rtlsw
+}
