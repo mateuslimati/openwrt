@@ -1144,7 +1144,11 @@
 					"CPLD (U33.N3)"
 				]
 			],
-			"notes": "A página só lê as linhas, sem mudar a direção de nenhuma."
+			"notes": "A página só lê as linhas, sem mudar a direção de nenhuma.",
+			"tool": [
+				"io",
+				"Mudar o modo e o valor das linhas"
+			]
 		},
 		"max1239": {
 			"tab": "U6 MAX1239",
@@ -1179,6 +1183,10 @@
 					"CH4–CH11",
 					"J500"
 				]
+			],
+			"tool": [
+				"adc",
+				"Ver as entradas em volts"
 			]
 		},
 		"repeater": {

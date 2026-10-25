@@ -1,0 +1,54 @@
+#!/bin/sh
+# The 16 lines of the PCA9555 (U2, 0-0023) of the LS1021A-IoT, through
+# the GPIO sysfs: an output set here keeps its level after the command
+# ends. IO0_0..IO0_7 (lines 0-7) go to J501 (PORT 1), IO1_0..IO1_7
+# (lines 8-15) to the CPLD, which leaves them unused.
+#
+#   ls1021aiot-io get			one line per I/O: <line> <in|out> <0|1>
+#   ls1021aiot-io set <line> in
+#   ls1021aiot-io set <line> out <0|1>
+#
+# The lines are exported on first use; that does not change them.
+
+base() {
+	local c
+	for c in /sys/class/gpio/gpiochip*; do
+		[ "$(cat $c/label 2>/dev/null)" = 0-0023 ] && { cat $c/base; return 0; }
+	done
+	return 1
+}
+
+B=$(base) || { echo "PCA9555 not found" >&2; exit 1; }
+
+line() {
+	local g=/sys/class/gpio/gpio$((B + $1))
+	[ -d $g ] || echo $((B + $1)) > /sys/class/gpio/export
+	echo $g
+}
+
+case "$1" in
+get)
+	for i in $(seq 0 15); do
+		g=$(line $i)
+		echo "$i $(cat $g/direction) $(cat $g/value)"
+	done
+	;;
+set)
+	case "$2" in
+	[0-9]|1[0-5]) ;;
+	*) echo "bad line: $2" >&2; exit 1 ;;
+	esac
+	g=$(line $2)
+	case "$3:$4" in
+	in:) echo in > $g/direction ;;
+	# high/low sets the level and the direction at once, no glitch
+	out:0) echo low > $g/direction ;;
+	out:1) echo high > $g/direction ;;
+	*) echo "bad mode: $3 $4" >&2; exit 1 ;;
+	esac
+	;;
+*)
+	echo "usage: $0 get | set <line> in | set <line> out <0|1>" >&2
+	exit 1
+	;;
+esac

@@ -122,6 +122,8 @@ return view.extend({
 					c.notes ? E('div', { 'class': 'alert-message warning', 'style': 'margin-top:.8em' }, c.notes) : ''
 				])
 			]),
+			c.tool ? E('div', { 'class': 'ls-toolbar', 'style': 'margin-top:1em' },
+				E('a', { 'class': 'btn cbi-button cbi-button-action', 'href': L.url('admin/status/ls1021aiot', c.tool[0]) }, c.tool[1])) : '',
 			CONTROLS[c.control] ? E('h3', {}, 'Controle') : '',
 			CONTROLS[c.control] ? E('div', { 'class': 'ls-toolbar' }, CONTROLS[c.control].map(function(b) {
 				return E('button', {

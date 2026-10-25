@@ -272,20 +272,17 @@ fxos8700() {
 }
 
 pca9555() {
-	local chip i n
+	local i dir val
 
-	chip=$(gpiodetect 2>/dev/null | awk '/\[0-0023\]/ { print $1 }')
-	[ -n "$chip" ] || missing
-	V "gpiochip" "$chip" ""
-	T "Linhas" "Linha|Pino|Destino|Valor"
-	i=0
-	for n in $(gpioget -c $chip --numeric $(seq 0 15) 2>/dev/null); do
+	[ -x /usr/libexec/ls1021aiot-io ] && /usr/libexec/ls1021aiot-io get >/dev/null 2>&1 || missing
+	T "Linhas" "Linha|Pino|Destino|Modo|Valor"
+	/usr/libexec/ls1021aiot-io get | while read -r i dir val; do
+		dir=$([ $dir = out ] && echo saída || echo entrada)
 		if [ $i -lt 8 ]; then
-			R "$i|IO0_$i|J501|$n"
+			R "$i|IO0_$i|J501|$dir|$val"
 		else
-			R "$i|IO1_$((i - 8))|CPLD|$n"
+			R "$i|IO1_$((i - 8))|CPLD|$dir|$val"
 		fi
-		i=$((i + 1))
 	done
 }
 

@@ -8,6 +8,9 @@
 #   ubus call ls1021aiot history '{"points":720,"seconds":86400}'
 #   ubus call ls1021aiot set_port '{"port":"lan3","on":false}'
 #   ubus call ls1021aiot chip '{"id":"adt7461"}'
+#   ubus call ls1021aiot io
+#   ubus call ls1021aiot set_io '{"line":0,"dir":"out","value":1}'
+#   ubus call ls1021aiot adc
 
 . /usr/share/libubox/jshn.sh
 
@@ -138,7 +141,7 @@ status() {
 
 # the other board devices: EEPROM, accelerometer, ADC and GPIO expander
 resources() {
-	local d s i chip
+	local d s i l
 
 	json_init
 	board_info
@@ -162,11 +165,10 @@ resources() {
 	}
 	json_close_array
 
-	# PCA9555: read its 16 lines, all inputs, without changing them
+	# PCA9555: the level of its 16 lines, without changing them
 	json_add_array gpio
-	chip=$(gpiodetect 2>/dev/null | awk '/\[0-0023\]/ { print $1 }')
-	[ -n "$chip" ] && for i in $(gpioget -c $chip --numeric $(seq 0 15) 2>/dev/null); do
-		json_add_int "" "$i"
+	for l in $(/usr/libexec/ls1021aiot-io get 2>/dev/null | tr ' ' :); do
+		json_add_int "" "${l##*:}"
 	done
 	json_close_array
 
@@ -301,6 +303,58 @@ set_port() {
 	echo "{\"port\":\"$port\",\"on\":$([ $on = 1 ] && echo true || echo false)}"
 }
 
+# the 16 lines of the PCA9555: direction and level
+io() {
+	local l
+
+	json_init
+	json_add_array lines
+	# <line>:<dir>:<value>; no pipe into the loop, json_* must not
+	# run in a subshell
+	for l in $(/usr/libexec/ls1021aiot-io get 2>/dev/null | tr ' ' :); do
+		json_add_object
+		json_add_int line ${l%%:*}
+		l=${l#*:}
+		json_add_string dir ${l%:*}
+		json_add_int value ${l#*:}
+		json_close_object
+	done
+	json_close_array
+	json_dump
+}
+
+set_io() {
+	local line dir value
+
+	json_load "$1"
+	json_get_var line line
+	json_get_var dir dir
+	json_get_var value value
+	[ "$dir" = out ] || value=
+	if /usr/libexec/ls1021aiot-io set "$line" "$dir" $value 2>/dev/null; then
+		logger -t ls1021aiot "LuCI: PCA9555 line $line $dir${value:+ $value}"
+		echo '{"ok":true}'
+	else
+		echo '{"ok":false}'
+	fi
+}
+
+# MAX1239: the 12 inputs, raw (0-4095) and the mV of one step
+adc() {
+	local d i
+
+	json_init
+	d=$(iio max1239) && {
+		json_add_string scale "$(cat $d/in_voltage_scale)"
+		json_add_array raw
+		for i in $(seq 0 11); do
+			json_add_int "" "$(cat $d/in_voltage${i}_raw)"
+		done
+		json_close_array
+	}
+	json_dump
+}
+
 # live values of one component page, from ls1021aiot-chip
 chip() {
 	local id
@@ -317,7 +371,8 @@ case "$1" in
 list)
 	echo '{"status":{},"resources":{},"history":{"points":720,"seconds":86400},' \
 	     '"set_port":{"port":"lan2","on":true},' \
-	     '"control":{"action":"led0","value":"blink"},"chip":{"id":"soc"}}'
+	     '"control":{"action":"led0","value":"blink"},"chip":{"id":"soc"},' \
+	     '"io":{},"set_io":{"line":0,"dir":"in","value":0},"adc":{}}'
 	;;
 call)
 	read -r input
@@ -328,6 +383,9 @@ call)
 	history) history "$input" ;;
 	set_port) set_port "$input" ;;
 	chip) chip "$input" ;;
+	io) io ;;
+	set_io) set_io "$input" ;;
+	adc) adc ;;
 	esac
 	;;
 esac

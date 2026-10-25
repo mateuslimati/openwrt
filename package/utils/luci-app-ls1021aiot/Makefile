@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-ls1021aiot
 PKG_VERSION:=1.0
-PKG_RELEASE:=8
+PKG_RELEASE:=9
 PKG_LICENSE:=GPL-2.0-or-later
 
 include $(INCLUDE_DIR)/package.mk
@@ -26,7 +26,10 @@ define Package/luci-app-ls1021aiot/description
   The map uses the photos in /www/luci-static/ls1021aiot/ (board.jpg,
   board-frdm.jpg, board-bottom.jpg) when they are installed, else a
   drawing made from the board layout; each component page shows the
-  close-up chips/<page>.jpg from there, when it is installed.
+  close-up chips/<page>.jpg from there, when it is installed. Two
+  more pages set the mode and level of the 16 lines of the PCA9555
+  I/O expander (ls1021aiot-io) and show the 12 inputs of the MAX1239
+  ADC in volts.
 endef
 
 define Build/Compile
@@ -40,13 +43,13 @@ define Package/luci-app-ls1021aiot/install
 	$(INSTALL_BIN) ./files/ls1021aiot-sensord $(1)/usr/sbin/
 	$(INSTALL_BIN) ./files/ls1021aiot-sensord.init $(1)/etc/init.d/ls1021aiot-sensord
 	$(INSTALL_BIN) ./files/rpcd-ls1021aiot $(1)/usr/libexec/rpcd/ls1021aiot
-	$(INSTALL_BIN) ./files/ls1021aiot-chip $(1)/usr/libexec/
+	$(INSTALL_BIN) ./files/ls1021aiot-chip ./files/ls1021aiot-io $(1)/usr/libexec/
 	$(INSTALL_DATA) ./files/luci-app-ls1021aiot.acl.json \
 		$(1)/usr/share/rpcd/acl.d/luci-app-ls1021aiot.json
 	$(INSTALL_DATA) ./files/luci-app-ls1021aiot.menu.json \
 		$(1)/usr/share/luci/menu.d/luci-app-ls1021aiot.json
 	$(INSTALL_DATA) ./files/board.js ./files/map.js ./files/case.js ./files/chip.js \
-		./files/components.js \
+		./files/components.js ./files/io.js ./files/adc.js \
 		$(1)/www/luci-static/resources/view/ls1021aiot/
 	$(INSTALL_DATA) ./files/common.js ./files/chips.json ./files/map.json ./files/panels.json \
 		./files/layout.svg $(1)/www/luci-static/resources/ls1021aiot/
