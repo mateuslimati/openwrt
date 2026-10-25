@@ -10,8 +10,10 @@
 
 var VIEW_KEY = 'ls1021aiot.map.view';
 
-function savedView() {
-	try { return localStorage.getItem(VIEW_KEY) || 'photo'; } catch (e) { return 'photo'; }
+function savedView(data) {
+	var v;
+	try { v = localStorage.getItem(VIEW_KEY); } catch (e) {}
+	return data.photos[v] || v == 'layout' ? v : (data.photo ? 'photo' : 'layout');
 }
 
 function saveView(v) {
@@ -85,14 +87,14 @@ return view.extend({
 	},
 
 	render: function(data) {
-		var self = this, which = data.photo ? savedView() : 'layout';
+		var self = this, which = savedView(data);
 		var box = E('div', { 'class': 'ls-mapbox' });
 		var order = data.chips.order, chips = data.chips.chips;
 
 		var btn = function(v, label) {
 			return E('button', {
 				'class': 'cbi-button' + (which == v ? ' cbi-button-action' : ''),
-				'disabled': (v == 'photo' && !data.photo) ? '' : null,
+				'disabled': (v != 'layout' && !data.photos[v]) ? '' : null,
 				'click': function(ev) {
 					which = v;
 					saveView(v);
@@ -111,11 +113,14 @@ return view.extend({
 			E('h2', {}, 'Mapa da placa'),
 			E('p', { 'class': 'cbi-section-descr' },
 				'Passe o mouse sobre um componente para ver o que ele é e o que está medindo agora. Clique para abrir a página dele. ' +
-				'Os contornos tracejados em azul estão no verso da placa. A FRDM-KW41Z, quando encaixada, cobre a área tracejada em roxo.'),
+				'Nas vistas de cima, os contornos tracejados em azul estão no verso da placa; a vista do verso mostra a placa virada, vista por baixo. ' +
+				'A FRDM-KW41Z, quando encaixada, cobre a área tracejada em roxo; na foto com ela, os chips dela aparecem no lugar.'),
 			E('div', { 'class': 'ls-toolbar' }, [
 				btn('photo', 'Foto'),
+				btn('frdm', 'Com a FRDM-KW41Z'),
+				btn('bottom', 'Verso'),
 				btn('layout', 'Desenho do layout'),
-				data.photo ? '' : E('span', { 'class': 'ls-muted' }, 'A foto não está instalada (/www/luci-static/ls1021aiot/board.jpg); mostrando o desenho do layout.')
+				data.photo ? '' : E('span', { 'class': 'ls-muted' }, 'As fotos não estão instaladas (/www/luci-static/ls1021aiot/); mostrando o desenho do layout.')
 			]),
 			box,
 			E('h3', { 'style': 'margin-top:1em' }, 'Todos os componentes'),

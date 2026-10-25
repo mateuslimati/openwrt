@@ -11,7 +11,12 @@
  */
 
 var BASE = 'admin/status/ls1021aiot';
-var PHOTO = L.resource('../ls1021aiot/board.jpg');
+/* the photos are installed on the board only; without them, the drawing */
+var PHOTOS = {
+	photo: L.resource('../ls1021aiot/board.jpg'),
+	frdm: L.resource('../ls1021aiot/board-frdm.jpg'),
+	bottom: L.resource('../ls1021aiot/board-bottom.jpg')
+};
 var LAYOUT = L.resource('ls1021aiot/layout.svg');
 var SVGNS = 'http://www.w3.org/2000/svg';
 
@@ -31,16 +36,15 @@ function fetchJSON(name) {
 	return cache[name];
 }
 
-/* the photo is installed on the board only; without it, the drawing */
-function photoAvailable() {
-	if (!cache.photo)
-		cache.photo = new Promise(function(resolve) {
+function photoAvailable(url) {
+	if (!cache[url])
+		cache[url] = new Promise(function(resolve) {
 			var img = new Image();
 			img.onload = function() { resolve(true); };
 			img.onerror = function() { resolve(false); };
-			img.src = PHOTO;
+			img.src = url;
 		});
-	return cache.photo;
+	return cache[url];
 }
 
 function svgEl(name, attrs, children) {
@@ -84,8 +88,22 @@ return baseclass.extend({
 	callChip: callChip,
 
 	load: function() {
-		return Promise.all([ fetchJSON('chips.json'), fetchJSON('map.json'), photoAvailable() ])
-			.then(function(r) { return { chips: r[0], map: r[1], photo: r[2] }; });
+		return Promise.all([ fetchJSON('chips.json'), fetchJSON('map.json'),
+				     photoAvailable(PHOTOS.photo), photoAvailable(PHOTOS.frdm), photoAvailable(PHOTOS.bottom) ])
+			.then(function(r) {
+				return { chips: r[0], map: r[1], photo: r[2], photos: { photo: r[2], frdm: r[3], bottom: r[4] } };
+			});
+	},
+
+	/* the view that shows a page best: the verso for parts under the
+	 * board, the photo with the FRDM for the chips on it */
+	viewFor: function(data, id) {
+		var parts = data.map.parts.filter(function(p) { return p.page == id; });
+		if (parts.length && parts.every(function(p) { return p.side == 'bot'; }) && data.photos.bottom)
+			return 'bottom';
+		if (!parts.length && data.photos.frdm)
+			return 'frdm';
+		return data.photos.photo ? 'photo' : 'layout';
 	},
 
 	url: function(id) {
@@ -94,70 +112,96 @@ return baseclass.extend({
 
 	/*
 	 * The board image with an outline over every part that has a page.
-	 * opts.view: 'photo' or 'layout'; opts.highlight: page id to mark;
+	 * opts.view: 'photo', 'frdm' (the photo with the FRDM-KW41Z plugged),
+	 * 'bottom' (the verso, seen from below) or 'layout'; a photo that is
+	 * not installed falls back to the drawing. opts.highlight: page id to mark;
 	 * opts.zoom: show only the area around it; opts.onhover(id, event)
 	 * and opts.onleave() for a tooltip.
 	 */
 	renderMap: function(data, opts) {
-		var self = this, useLayout = opts.view == 'layout' || !data.photo;
-		var dim = useLayout ? data.map.layout : data.map.photo;
-		var key = useLayout ? 'layout' : 'photo';
+		var self = this, view = data.photos[opts.view] ? opts.view : 'layout';
+		var key = { layout: 'layout', bottom: 'bottom' }[view] || 'photo';
+		var dim = data.map[key];
 		var svg = svgEl('svg', {
 			'viewBox': '0 0 ' + dim.w + ' ' + dim.h,
 			'class': 'ls-map' + (opts.highlight ? ' ls-map-focus' : ''),
 			'role': 'img',
-			'aria-label': 'Placa LS1021A-IoT'
+			'aria-label': 'Placa LS1021A-IoT' + (view == 'bottom' ? ', verso' : '')
 		});
+		var zoomPts = [];
 
 		svg.appendChild(svgEl('image', {
-			'href': useLayout ? LAYOUT : PHOTO,
+			'href': view == 'layout' ? LAYOUT : PHOTOS[view],
 			'x': 0, 'y': 0, 'width': dim.w, 'height': dim.h
 		}));
 
-		/* the FRDM-KW41Z, when plugged, covers the Arduino headers */
-		var f = data.map.frdm[key], fb = bbox(f), fc = [ fb[0], fb[1] ];
-		var frdm = svgEl('g', { 'class': 'ls-frdm' }, [
-			svgEl('polygon', { 'points': points(f) }),
-			svgEl('text', { 'x': fc[0] + 6, 'y': fc[1] + 20 }, [ 'FRDM-KW41Z (encaixada)' ])
-		]);
-		[ 'kw41z', 'fxos8700' ].forEach(function(id, i) {
-			var c = data.chips.chips[id];
-			var a = svgEl('a', { 'href': self.url(id), 'class': 'ls-pill' + (opts.highlight == id ? ' active' : '') }, [
-				svgEl('rect', { 'x': fc[0] + 6 + i * 96, 'y': fc[1] + 30, 'width': 90, 'height': 22, 'rx': 11 }),
-				svgEl('text', { 'x': fc[0] + 51 + i * 96, 'y': fc[1] + 45 }, [ i ? 'FXOS8700CQ' : 'KW41Z (BLE)' ])
+		var part = function(page, ref, pts, cls, label) {
+			var a = svgEl('a', { 'href': self.url(page), 'class': cls + (opts.highlight == page ? ' active' : '') }, [
+				svgEl('polygon', { 'points': points(pts) }),
+				svgEl('title', {}, [ label ])
 			]);
-			a.appendChild(svgEl('title', {}, [ c.name ]));
-			self.bindHover(a, id, opts);
-			frdm.appendChild(a);
-		});
-		svg.appendChild(frdm);
-
-		data.map.parts.forEach(function(p) {
-			var c = data.chips.chips[p.page];
-			var cls = 'ls-part' + (p.side == 'bot' ? ' ls-bottom' : '') +
-				(opts.highlight == p.page ? ' active' : '');
-			var a = svgEl('a', { 'href': self.url(p.page), 'class': cls }, [
-				svgEl('polygon', { 'points': points(p[key]) }),
-				svgEl('title', {}, [ p.ref + ' — ' + c.name + (p.side == 'bot' ? ' (verso)' : '') ])
-			]);
-			if (opts.highlight == p.page) {
-				var m = centre(p[key]);
+			if (opts.highlight == page) {
+				var m = centre(pts);
 				a.appendChild(svgEl('circle', { 'class': 'ls-pulse', 'cx': m[0], 'cy': m[1], 'r': 6 }));
+				zoomPts = zoomPts.concat(pts);
 			}
-			self.bindHover(a, p.page, opts);
-			svg.appendChild(a);
+			self.bindHover(a, page, opts);
+			return a;
+		};
+
+		/* the FRDM-KW41Z covers the Arduino headers: in the photo with it
+		 * plugged its chips are outlined where they are, elsewhere it is
+		 * the dashed area with a button for each */
+		var f = data.map.frdm[key], fb, fc, frdm;
+		if (view == 'frdm') {
+			frdm = svgEl('g', { 'class': 'ls-frdm ls-frdm-photo' }, [
+				svgEl('polygon', { 'points': points(data.map.frdm.board) })
+			]);
+			data.map.frdm.chips.forEach(function(ch) {
+				frdm.appendChild(part(ch.page, ch.ref, ch.poly, 'ls-part ls-onfrdm',
+					ch.ref + ' — ' + data.chips.chips[ch.page].name + ' (na FRDM-KW41Z)'));
+			});
+		}
+		else if (f) {
+			fb = bbox(f); fc = [ fb[0], fb[1] ];
+			frdm = svgEl('g', { 'class': 'ls-frdm' }, [
+				svgEl('polygon', { 'points': points(f) }),
+				svgEl('text', { 'x': fc[0] + 6, 'y': fc[1] + 20 }, [ 'FRDM-KW41Z (encaixada)' ])
+			]);
+			[ 'kw41z', 'fxos8700' ].forEach(function(id, i) {
+				var c = data.chips.chips[id];
+				var a = svgEl('a', { 'href': self.url(id), 'class': 'ls-pill' + (opts.highlight == id ? ' active' : '') }, [
+					svgEl('rect', { 'x': fc[0] + 6 + i * 96, 'y': fc[1] + 30, 'width': 90, 'height': 22, 'rx': 11 }),
+					svgEl('text', { 'x': fc[0] + 51 + i * 96, 'y': fc[1] + 45 }, [ i ? 'FXOS8700CQ' : 'KW41Z (BLE)' ])
+				]);
+				a.appendChild(svgEl('title', {}, [ c.name ]));
+				self.bindHover(a, id, opts);
+				frdm.appendChild(a);
+				if (opts.highlight == id)
+					zoomPts = zoomPts.concat(f);
+			});
+		}
+
+		/* the parts on the other side of the board: dashed in the top
+		 * views, left out in the verso; in the photo with the FRDM, the
+		 * ones hidden under it are left out too */
+		var under = view == 'frdm' ? bbox(data.map.frdm.board) : null;
+		data.map.parts.forEach(function(p) {
+			var c = data.chips.chips[p.page], bot = p.side == 'bot', m = centre(p[key]);
+			if (view == 'bottom' && !bot)
+				return;
+			if (under && !bot && m[0] > under[0] && m[0] < under[2] && m[1] > under[1] && m[1] < under[3])
+				return;
+			svg.appendChild(part(p.page, p.ref, p[key],
+				'ls-part' + (bot && view != 'bottom' ? ' ls-bottom' : ''),
+				p.ref + ' — ' + c.name + (bot && view != 'bottom' ? ' (verso)' : '')));
 		});
 
-		if (opts.zoom && opts.highlight) {
-			var pts = [];
-			data.map.parts.forEach(function(p) {
-				if (p.page == opts.highlight)
-					pts = pts.concat(p[key]);
-			});
-			if (!pts.length)
-				pts = f;
-			svg.setAttribute('viewBox', zoomBox(pts, dim, dim.w * 0.3));
-		}
+		if (frdm && view != 'bottom')
+			svg.appendChild(frdm);
+
+		if (opts.zoom && zoomPts.length)
+			svg.setAttribute('viewBox', zoomBox(zoomPts, dim, dim.w * 0.3));
 
 		return svg;
 	},
@@ -217,6 +261,10 @@ return baseclass.extend({
 		'.ls-pulse{fill:none;stroke:#ff4081;stroke-width:2;vector-effect:non-scaling-stroke;animation:lspulse 1.4s ease-out infinite;transform-box:fill-box;transform-origin:center}',
 		'@keyframes lspulse{0%{opacity:.9;transform:scale(1)}100%{opacity:0;transform:scale(5)}}',
 		'.ls-frdm polygon{fill:rgba(224,64,251,.05);stroke:#e040fb;stroke-width:2;stroke-dasharray:10 6;vector-effect:non-scaling-stroke;pointer-events:none}',
+		'.ls-frdm-photo polygon{stroke-opacity:.6}',
+		'.ls-part.ls-onfrdm polygon{stroke:#e040fb;stroke-dasharray:none;fill:rgba(224,64,251,.08);pointer-events:auto}',
+		'.ls-part.ls-onfrdm.active polygon{stroke:#ff4081}',
+		'.ls-part.ls-onfrdm:hover polygon{fill:rgba(224,64,251,.38)}',
 		'.ls-frdm>text{fill:#e040fb;font:bold 15px sans-serif;paint-order:stroke;stroke:#000;stroke-width:3px;pointer-events:none}',
 		'.ls-pill rect{fill:#e040fb;stroke:#fff;stroke-width:1.5;cursor:pointer}',
 		'.ls-pill:hover rect,.ls-pill.active rect{fill:#ff4081}',

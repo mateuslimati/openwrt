@@ -29,7 +29,7 @@ return view.extend({
 		var drawMap = function() {
 			mapbox.innerHTML = '';
 			mapbox.appendChild(E('a', { 'href': common.url(), 'title': 'Abrir o mapa da placa' },
-				common.renderMap(data, { view: data.photo ? 'photo' : 'layout', highlight: id, zoom: zoomed })));
+				common.renderMap(data, { view: common.viewFor(data, id), highlight: id, zoom: zoomed })));
 		};
 		drawMap();
 
