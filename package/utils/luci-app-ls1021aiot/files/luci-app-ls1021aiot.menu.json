@@ -367,5 +367,29 @@
 			"type": "view",
 			"path": "ls1021aiot/chip"
 		}
+	},
+	"admin/status/ls1021aiot/chip/led0": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/led-pwr": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/led-debug": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/led-k22": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
 	}
 }

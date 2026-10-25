@@ -52,6 +52,10 @@
 		"jtag-u28",
 		"jtag-u27",
 		"jtag-u26",
+		"led0",
+		"led-pwr",
+		"led-debug",
+		"led-k22",
 		"kw41z",
 		"fxos8700"
 	],
@@ -146,6 +150,15 @@
 				"jtag-u28",
 				"jtag-u27",
 				"jtag-u26"
+			]
+		},
+		{
+			"name": "LEDs do painel",
+			"ids": [
+				"led0",
+				"led-pwr",
+				"led-debug",
+				"led-k22"
 			]
 		},
 		{
@@ -1576,6 +1589,121 @@
 				]
 			],
 			"notes": "Sem a FRDM encaixada, o driver não encontra o sensor e a página mostra \"não encontrado\". O driver fxos8700 do Linux 6.18 informa a escala da aceleração em g, e não em m/s² como a ABI do IIO pede; esta página faz a conversão."
+		},
+		"led0": {
+			"tab": "D8 LED0",
+			"name": "LED0 (verde)",
+			"part": "LED verde SMD de ângulo reto (370-76642), resistor de 2,2 kΩ (R170)",
+			"summary": "O LED do painel que o software controla: ligado a um pino do CPLD, que o acende pelo registrador de escrita.",
+			"description": "O CPLD (U33) acende o LED pelo pino M1 (CPLD_LED), através do R170. Na versão do CPLD gravada nesta placa o pino segue o bit 0 do registrador em 0x7FB00000; o driver ls1021aiot-cpld o expõe como /sys/class/leds/ls1021aiot:green:led0. Depois de um reset do CPLD ele começa apagado, e o OpenWrt o deixa piscando (gatilho timer).",
+			"bus": [
+				{
+					"bus": "IFC (CPLD)",
+					"addr": "0x7FB00000, bit 0",
+					"linux": "/sys/class/leds/ls1021aiot:green:led0"
+				}
+			],
+			"proto": [
+				"GPIO (CPLD)"
+			],
+			"specs": [
+				[
+					"No painel",
+					"LED0"
+				],
+				[
+					"Cor",
+					"verde"
+				],
+				[
+					"Sinal",
+					"CPLD_LED (U33.M1) → R170 → D8"
+				],
+				[
+					"Aceso",
+					"bit 0 do registrador = 1"
+				]
+			],
+			"live": "led0",
+			"control": "led0"
+		},
+		"led-pwr": {
+			"tab": "D7 PWR",
+			"name": "LED PWR (verde)",
+			"part": "LED verde SMD de ângulo reto (370-76642), resistor de 2,2 kΩ (R169)",
+			"summary": "Aceso enquanto o PMIC liga a sua saída de 3,3 V.",
+			"description": "Ligado ao +3V3_PMIC pelo R169: acende quando o LT3976 (U12) que alimenta o PMIC está ligado. Nenhum software o controla.",
+			"bus": [],
+			"proto": [
+				"Analógico"
+			],
+			"specs": [
+				[
+					"No painel",
+					"PWR"
+				],
+				[
+					"Cor",
+					"verde"
+				],
+				[
+					"Sinal",
+					"+3V3_PMIC → R169 → D7 (PMIC_LED_ON)"
+				]
+			],
+			"live": "pmic"
+		},
+		"led-debug": {
+			"tab": "D6 DEBUG",
+			"name": "LED DEBUG (vermelho)",
+			"part": "LED vermelho SMD de ângulo reto (370-76641), resistor de 2,2 kΩ (R168)",
+			"summary": "O sinal ASLEEP do LS1021A: acende com o processador parado ou em baixo consumo.",
+			"description": "Ligado ao pino ASLEEP do LS1021A (U22.E6) pelo R168. Fica aceso enquanto o processador não sai do reset, por isso, aceso logo depois de ligar, ele indica de que o boot não começou (PBL ou RCW). Em funcionamento normal fica apagado. Nenhum software o controla diretamente.",
+			"bus": [],
+			"proto": [
+				"Sinal do SoC"
+			],
+			"specs": [
+				[
+					"No painel",
+					"DEBUG"
+				],
+				[
+					"Cor",
+					"vermelho"
+				],
+				[
+					"Sinal",
+					"ASLEEP (U22.E6) → R168 → D6"
+				]
+			],
+			"live": false
+		},
+		"led-k22": {
+			"tab": "D5 K22",
+			"name": "LED K22 (verde)",
+			"part": "LED verde SMD de ângulo reto (370-76642), resistor de 2,2 kΩ (R166)",
+			"summary": "O LED da interface de depuração: o firmware do K22 (U19) o acende pelo SDA_LED.",
+			"description": "Alimentado pelo +3V3 através do R166 e acionado pelo pino 61 do K22 (SDA_LED), que o liga ao terra. O firmware CMSIS-DAP o usa para mostrar o estado da interface USB de depuração; o Linux da placa não tem acesso a ele.",
+			"bus": [],
+			"proto": [
+				"GPIO (K22)"
+			],
+			"specs": [
+				[
+					"No painel",
+					"K22"
+				],
+				[
+					"Cor",
+					"verde"
+				],
+				[
+					"Sinal",
+					"+3V3 → R166 → D5 → SDA_LED (U19.61)"
+				]
+			],
+			"live": false
 		}
 	}
 }

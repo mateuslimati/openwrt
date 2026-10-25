@@ -120,7 +120,7 @@ return view.extend({
 			E('h2', {}, 'Mapa da placa'),
 			E('p', { 'class': 'cbi-section-descr' },
 				'Passe o mouse sobre um componente para ver o que ele é e o que está medindo agora. Clique para abrir a página dele. ' +
-				'Nas vistas de cima, os contornos tracejados em azul estão no verso da placa; a vista do verso mostra a placa virada, vista por baixo. ' +
+				'Cada vista marca só os chips do seu lado: os do verso (EEPROM, hub USB, cartão SD...) estão na vista do verso, que mostra a placa virada, vista por baixo. ' +
 				'A FRDM-KW41Z, quando encaixada, cobre a área tracejada em roxo; na foto com ela, os chips dela aparecem no lugar.'),
 			E('div', { 'class': 'ls-toolbar' }, [
 				btn('photo', 'Foto'),

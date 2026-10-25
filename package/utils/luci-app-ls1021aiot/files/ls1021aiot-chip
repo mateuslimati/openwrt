@@ -102,6 +102,17 @@ cpld() {
 	done
 }
 
+led0() {
+	local l=/sys/class/leds/ls1021aiot:green:led0 t
+
+	[ -d $l ] || missing
+	t=$(sed 's/.*\[\(.*\)\].*/\1/' $l/trigger)
+	V "Estado" "$([ $t = timer ] && echo piscando || { [ "$(v $l/brightness)" = 0 ] && echo apagado || echo aceso; })" ""
+	V "Brilho" "$(v $l/brightness)" ""
+	V "Gatilho" "$t" ""
+	[ $t = timer ] && V "Período" "$(v $l/delay_on) + $(v $l/delay_off)" "ms"
+}
+
 switch() {
 	local p n state
 
@@ -460,7 +471,7 @@ exec 3>&1 1>$OUT
 
 case "$ID" in
 soc|ddr|cpld|switch|phy|pmic|power|clocks|adt7461|lm75|mma8451|fxos8700|\
-pca9555|max1239|eeprom|audio|hdmi|qspi|usbhub|sdcard|opensda|repeater|kw41z)
+pca9555|max1239|eeprom|audio|hdmi|qspi|usbhub|sdcard|opensda|repeater|kw41z|led0)
 	$ID ;;
 ina220-12v) ina220 0-0045 ;;
 ina220-1v) ina220 0-0044 ;;

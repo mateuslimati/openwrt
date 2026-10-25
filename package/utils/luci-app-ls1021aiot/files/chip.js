@@ -1,6 +1,8 @@
 'use strict';
 'require view';
 'require poll';
+'require rpc';
+'require ui';
 'require ls1021aiot.common as common';
 
 /*
@@ -10,6 +12,18 @@
  * The page id is the last element of the path,
  * admin/status/ls1021aiot/chip/<id>.
  */
+
+var callControl = rpc.declare({
+	object: 'ls1021aiot',
+	method: 'control',
+	params: [ 'action', 'value' ]
+});
+
+/* the buttons of chips.json "control": the action of the backend's
+ * control method and the values it takes */
+var CONTROLS = {
+	led0: [ [ 'off', 'Apagar' ], [ 'on', 'Acender' ], [ 'blink', 'Piscar' ] ]
+};
 
 function pageId() {
 	var p = L.env.dispatchpath || L.env.requestpath;
@@ -47,13 +61,14 @@ return view.extend({
 			return p.ref + (p.side == 'bot' ? ' (verso)' : '');
 		});
 
-		if (lid) poll.add(function() {
+		var refresh = function() {
 			return common.callChip(lid).then(function(res) {
 				live.innerHTML = '';
 				live.appendChild(common.renderLive(res));
 				stamp.textContent = 'atualizado às ' + new Date().toLocaleTimeString();
 			});
-		}, 2);
+		};
+		if (lid) poll.add(refresh, 2);
 
 		var nav = function(j, label) {
 			return (j >= 0 && j < order.length)
@@ -107,6 +122,15 @@ return view.extend({
 					c.notes ? E('div', { 'class': 'alert-message warning', 'style': 'margin-top:.8em' }, c.notes) : ''
 				])
 			]),
+			CONTROLS[c.control] ? E('h3', {}, 'Controle') : '',
+			CONTROLS[c.control] ? E('div', { 'class': 'ls-toolbar' }, CONTROLS[c.control].map(function(b) {
+				return E('button', {
+					'class': 'btn cbi-button',
+					'click': ui.createHandlerFn(this, function() {
+						return callControl(c.control, b[0]).then(refresh);
+					})
+				}, b[1]);
+			}, this)) : '',
 			lid ? E('h3', {}, [ 'Valores ao vivo ', stamp ]) : '',
 			(lid && lid != id && data.chips.chips[lid]) ? E('p', { 'class': 'ls-muted' }, [
 				'Este chip não tem leitura própria; estes são os valores de ',

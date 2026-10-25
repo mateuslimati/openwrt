@@ -221,19 +221,16 @@ return baseclass.extend({
 			});
 		}
 
-		/* the parts on the other side of the board: dashed in the top
-		 * views, left out in the verso; in the photo with the FRDM, the
-		 * ones hidden under it are left out too */
+		/* only the parts on the side shown; in the photo with the FRDM,
+		 * the ones hidden under it are left out too */
 		var under = view == 'frdm' ? bbox(data.map.frdm.board) : null;
 		data.map.parts.forEach(function(p) {
 			var c = data.chips.chips[p.page], bot = p.side == 'bot', m = centre(p[key]);
-			if (view == 'bottom' && !bot)
+			if ((view == 'bottom') != bot)
 				return;
 			if (under && !bot && m[0] > under[0] && m[0] < under[2] && m[1] > under[1] && m[1] < under[3])
 				return;
-			svg.appendChild(part(p.page, p.ref, p[key],
-				'ls-part' + (bot && view != 'bottom' ? ' ls-bottom' : ''),
-				p.ref + ' — ' + c.name + (bot && view != 'bottom' ? ' (verso)' : '')));
+			svg.appendChild(part(p.page, p.ref, p[key], 'ls-part', p.ref + ' — ' + c.name));
 		});
 
 		if (frdm && view != 'bottom')
@@ -293,8 +290,6 @@ return baseclass.extend({
 		'.ls-map{width:100%;height:auto;display:block;border-radius:6px;background:#0d5c33}',
 		'.ls-part polygon{fill:rgba(255,193,7,.06);stroke:#ffc107;stroke-width:2;vector-effect:non-scaling-stroke;cursor:pointer;transition:fill .15s}',
 		'.ls-part:hover polygon,.ls-part:focus polygon{fill:rgba(255,193,7,.38);stroke-width:3}',
-		'.ls-part.ls-bottom polygon{stroke:#4fc3f7;stroke-dasharray:6 4;fill:rgba(79,195,247,.06)}',
-		'.ls-part.ls-bottom:hover polygon{fill:rgba(79,195,247,.35)}',
 		'.ls-map-focus .ls-part:not(.active) polygon{stroke-opacity:.35}',
 		'.ls-part.active polygon{fill:rgba(255,64,129,.08);stroke:#ff4081;stroke-width:3}',
 		'.ls-pulse{fill:none;stroke:#ff4081;stroke-width:2;vector-effect:non-scaling-stroke;animation:lspulse 1.4s ease-out infinite;transform-box:fill-box;transform-origin:center}',
