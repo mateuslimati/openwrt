@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-ls1021aiot
 PKG_VERSION:=1.0
-PKG_RELEASE:=4
+PKG_RELEASE:=5
 PKG_LICENSE:=GPL-2.0-or-later
 
 include $(INCLUDE_DIR)/package.mk
@@ -43,10 +43,10 @@ define Package/luci-app-ls1021aiot/install
 		$(1)/usr/share/rpcd/acl.d/luci-app-ls1021aiot.json
 	$(INSTALL_DATA) ./files/luci-app-ls1021aiot.menu.json \
 		$(1)/usr/share/luci/menu.d/luci-app-ls1021aiot.json
-	$(INSTALL_DATA) ./files/board.js ./files/map.js ./files/chip.js \
+	$(INSTALL_DATA) ./files/board.js ./files/map.js ./files/case.js ./files/chip.js \
 		./files/components.js \
 		$(1)/www/luci-static/resources/view/ls1021aiot/
-	$(INSTALL_DATA) ./files/common.js ./files/chips.json ./files/map.json \
+	$(INSTALL_DATA) ./files/common.js ./files/chips.json ./files/map.json ./files/panels.json \
 		./files/layout.svg $(1)/www/luci-static/resources/ls1021aiot/
 endef
 
