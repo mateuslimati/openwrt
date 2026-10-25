@@ -1,0 +1,32 @@
+From: Mateus Lima Alves <mateuslima.ti@gmail.com>
+Subject: [PATCH] ARM: dts: ls1021a-iot: add the FXOS8700CQ of the FRDM-KW41Z
+
+The FRDM-KW41Z plugged in the Arduino headers carries the Bluetooth LE
+controller of this setup and an FXOS8700CQ accelerometer and
+magnetometer. The I2C lines of the Arduino headers (J8, J15) reach the
+board I2C bus through the PCA9515 repeater (U10), which the CPLD keeps
+enabled, so the sensor answers at 0x1f next to the board devices.
+
+The FRDM-KW41Z is an add-on, not part of the board: this belongs in an
+overlay upstream. Without it the probe fails and nothing else changes.
+
+Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
+---
+--- a/arch/arm/boot/dts/nxp/ls/ls1021a-iot.dts
++++ b/arch/arm/boot/dts/nxp/ls/ls1021a-iot.dts
+@@ -216,6 +216,15 @@
+ 		reg = <0x51>;
+ 		read-only;
+ 	};
++
++	/*
++	 * Accelerometer and magnetometer of the FRDM-KW41Z on the Arduino
++	 * headers, behind the PCA9515 repeater (U10)
++	 */
++	magnetometer@1f {
++		compatible = "nxp,fxos8700";
++		reg = <0x1f>;
++	};
+ };
+
+ &lpuart0 {

@@ -19,6 +19,7 @@ CONFIG_PACKAGE_kmod-hci-uart=y
 CONFIG_PACKAGE_kmod-hwmon-ina2xx=y
 CONFIG_PACKAGE_kmod-hwmon-lm75=y
 CONFIG_PACKAGE_kmod-hwmon-lm90=y
+CONFIG_PACKAGE_kmod-iio-fxos8700-i2c=y
 CONFIG_PACKAGE_kmod-iio-max1363=y
 CONFIG_PACKAGE_kmod-iio-mma8452=y
 CONFIG_PACKAGE_kmod-ledtrig-timer=y
