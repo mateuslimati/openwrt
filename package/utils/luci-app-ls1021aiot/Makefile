@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-ls1021aiot
 PKG_VERSION:=1.0
-PKG_RELEASE:=5
+PKG_RELEASE:=6
 PKG_LICENSE:=GPL-2.0-or-later
 
 include $(INCLUDE_DIR)/package.mk
@@ -23,8 +23,10 @@ define Package/luci-app-ls1021aiot/description
   down and up. ls1021aiot-sensord samples the sensors every 10 s into
   /tmp. A map of the board links each part to a page with what it does,
   how the processor reaches it and its live values (ls1021aiot-chip).
-  The map uses the photo at /www/luci-static/ls1021aiot/board.jpg when
-  it is installed, else a drawing made from the board layout.
+  The map uses the photos in /www/luci-static/ls1021aiot/ (board.jpg,
+  board-frdm.jpg, board-bottom.jpg) when they are installed, else a
+  drawing made from the board layout; each component page shows the
+  close-up chips/<page>.jpg from there, when it is installed.
 endef
 
 define Build/Compile

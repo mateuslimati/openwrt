@@ -45,17 +45,25 @@ return view.extend({
 
 	showTip: function(data, id, ev) {
 		var c = data.chips.chips[id], tip = this.tooltip(), live = E('div', { 'class': 'ls-tip-live ls-muted' }, 'lendo…');
-		var token = this.hovered = id;
+		var token = this.hovered = id, lid = common.liveId(data, id), img = E('img', { 'alt': '' });
 
 		tip.innerHTML = '';
 		tip.appendChild(E('div', {}, [ E('b', {}, c.tab), ' — ', c.name ]));
+		img.onerror = function() { img.remove(); };
+		img.onload = L.bind(function() { this.placeTip(ev); }, this);
+		img.src = common.closeup(id);
+		tip.appendChild(img);
 		tip.appendChild(E('div', {}, c.summary));
-		tip.appendChild(live);
+		if (lid)
+			tip.appendChild(live);
 		tip.style.display = '';
 		this.placeTip(ev);
 
+		if (!lid)
+			return;
+
 		/* a few live values: the first ones the page shows */
-		common.callChip(id).then(L.bind(function(res) {
+		common.callChip(lid).then(L.bind(function(res) {
 			if (this.hovered != token)
 				return;
 			var vals = (res && res.values || []).slice(0, 4);
@@ -89,7 +97,6 @@ return view.extend({
 	render: function(data) {
 		var self = this, which = savedView(data);
 		var box = E('div', { 'class': 'ls-mapbox' });
-		var order = data.chips.order, chips = data.chips.chips;
 
 		var btn = function(v, label) {
 			return E('button', {
@@ -124,13 +131,7 @@ return view.extend({
 			]),
 			box,
 			E('h3', { 'style': 'margin-top:1em' }, 'Todos os componentes'),
-			E('div', { 'class': 'ls-grid' }, order.map(function(id) {
-				var c = chips[id];
-				return E('a', { 'class': 'ls-card', 'href': common.url(id) }, [
-					E('strong', {}, c.tab), ' ', c.name,
-					E('small', {}, c.summary)
-				]);
-			}))
+			common.renderGrid(data)
 		]);
 	},
 

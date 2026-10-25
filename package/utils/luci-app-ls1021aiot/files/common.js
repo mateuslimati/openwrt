@@ -18,6 +18,8 @@ var PHOTOS = {
 	bottom: L.resource('../ls1021aiot/board-bottom.jpg')
 };
 var LAYOUT = L.resource('ls1021aiot/layout.svg');
+/* close-up of the chip of each page, cut from the same photos */
+var CLOSEUPS = '../ls1021aiot/chips/';
 var SVGNS = 'http://www.w3.org/2000/svg';
 
 var callChip = rpc.declare({
@@ -108,6 +110,43 @@ return baseclass.extend({
 
 	url: function(id) {
 		return id ? L.url(BASE, 'chip', id) : L.url(BASE, 'map');
+	},
+
+	/* the page whose live values a page shows: its own, the one it
+	 * shares (chips.json "live") or none (false) */
+	liveId: function(data, id) {
+		var c = data.chips.chips[id];
+		return (!c || c.live === false) ? null : (c.live || id);
+	},
+
+	closeup: function(id) {
+		return L.resource(CLOSEUPS + id + '.jpg');
+	},
+
+	closeupAvailable: function(id) {
+		return photoAvailable(this.closeup(id));
+	},
+
+	/* a card for every page, under the headings of chips.json "groups" */
+	renderGrid: function(data) {
+		var self = this, chips = data.chips.chips;
+		var groups = data.chips.groups || [ { name: '', ids: data.chips.order } ];
+
+		return E('div', {}, groups.map(function(g) {
+			return E('div', {}, [
+				g.name ? E('h4', { 'class': 'ls-group' }, g.name) : '',
+				E('div', { 'class': 'ls-grid' }, g.ids.map(function(id) {
+					var c = chips[id];
+					return E('a', { 'class': 'ls-card', 'href': self.url(id) }, [
+						E('strong', {}, c.tab), ' ', c.name,
+						E('small', {}, c.summary),
+						E('small', { 'class': 'ls-tags' }, (c.bus || []).slice(0, 1).map(function(b) {
+							return E('span', {}, b.bus + ' · ' + b.addr);
+						}))
+					]);
+				}))
+			]);
+		}));
 	},
 
 	/*
@@ -280,6 +319,9 @@ return baseclass.extend({
 		'.ls-card small{display:block;opacity:.75;margin-top:.3em}',
 		'.ls-tags span{display:inline-block;margin:0 .3em .3em 0;padding:.1em .55em;border-radius:1em;background:rgba(127,127,127,.18);font-size:85%}',
 		'.ls-chip{display:grid;grid-template-columns:minmax(260px,2fr) 3fr;gap:1.2em;align-items:start}',
+		'.ls-closeup{display:block;max-width:100%;width:360px;height:auto;margin-bottom:.8em;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.35)}',
+		'.ls-tip img{display:block;max-width:150px;max-height:150px;margin:.4em 0;border-radius:4px}',
+		'.ls-group{margin:1.2em 0 .5em}',
 		'@media (max-width:800px){.ls-chip{grid-template-columns:1fr}}',
 		'.ls-toolbar{display:flex;gap:.5em;align-items:center;flex-wrap:wrap;margin-bottom:.6em}',
 		'.ls-nav{display:flex;justify-content:space-between;margin-top:1em}'

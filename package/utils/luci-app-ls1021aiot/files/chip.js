@@ -4,9 +4,11 @@
 'require ls1021aiot.common as common';
 
 /*
- * One component of the LS1021A-IoT: where it is on the board, what it
- * does, how the processor talks to it and what it reads right now. The
- * page id is the last element of the path, admin/status/ls1021aiot/chip/<id>.
+ * One component of the LS1021A-IoT: a close-up of it, where it is on the
+ * board, what it does, how the processor talks to it and what it reads
+ * right now (its own values, or those of the page it shares them with).
+ * The page id is the last element of the path,
+ * admin/status/ls1021aiot/chip/<id>.
  */
 
 function pageId() {
@@ -17,13 +19,18 @@ function pageId() {
 return view.extend({
 	load: function() {
 		var id = pageId();
-		return Promise.all([ common.load(), L.resolveDefault(common.callChip(id), null) ])
-			.then(function(r) { r[0].id = id; r[0].live = r[1]; return r[0]; });
+		return common.load().then(function(data) {
+			var lid = common.liveId(data, id);
+			data.id = id;
+			data.liveId = lid;
+			return Promise.all([ lid ? L.resolveDefault(common.callChip(lid), null) : null, common.closeupAvailable(id) ])
+				.then(function(r) { data.live = r[0]; data.closeup = r[1]; return data; });
+		});
 	},
 
 	render: function(data) {
-		var id = data.id, c = data.chips.chips[id], order = data.chips.order;
-		var i = order.indexOf(id), live = E('div', {}, common.renderLive(data.live));
+		var id = data.id, c = data.chips.chips[id], order = data.chips.order, lid = data.liveId;
+		var i = order.indexOf(id), live = E('div', {}, lid ? common.renderLive(data.live) : '');
 		var stamp = E('span', { 'class': 'ls-muted' }, '');
 		var zoomed = true, mapbox = E('div', {});
 		var drawMap = function() {
@@ -40,8 +47,8 @@ return view.extend({
 			return p.ref + (p.side == 'bot' ? ' (verso)' : '');
 		});
 
-		poll.add(function() {
-			return common.callChip(id).then(function(res) {
+		if (lid) poll.add(function() {
+			return common.callChip(lid).then(function(res) {
 				live.innerHTML = '';
 				live.appendChild(common.renderLive(res));
 				stamp.textContent = 'atualizado às ' + new Date().toLocaleTimeString();
@@ -60,6 +67,7 @@ return view.extend({
 			E('p', { 'class': 'cbi-section-descr' }, [ E('strong', {}, c.part) ]),
 			E('div', { 'class': 'ls-chip' }, [
 				E('div', {}, [
+					data.closeup ? E('img', { 'class': 'ls-closeup', 'src': common.closeup(id), 'alt': c.tab }) : '',
 					mapbox,
 					E('div', { 'class': 'ls-toolbar', 'style': 'margin-top:.4em' }, [
 						E('button', { 'class': 'cbi-button', 'click': function(ev) {
@@ -74,8 +82,8 @@ return view.extend({
 				E('div', {}, [
 					E('p', {}, E('strong', {}, c.summary)),
 					E('p', {}, c.description),
-					E('h3', {}, 'Como o processador conversa com ele'),
-					E('table', { 'class': 'table' }, [
+					(c.bus && c.bus.length) ? E('h3', {}, 'Como o processador conversa com ele') : '',
+					(c.bus && c.bus.length) ? E('table', { 'class': 'table' }, [
 						E('tr', { 'class': 'tr table-titles' }, [
 							E('th', { 'class': 'th' }, 'Barramento'),
 							E('th', { 'class': 'th' }, 'Endereço'),
@@ -87,7 +95,7 @@ return view.extend({
 							E('td', { 'class': 'td' }, E('code', {}, b.addr)),
 							E('td', { 'class': 'td' }, E('code', {}, b.linux))
 						]);
-					}))),
+					}))) : '',
 					E('div', { 'class': 'ls-tags', 'style': 'margin-top:.6em' }, [ 'Protocolos: ' ].concat(
 						(c.proto || []).map(function(p) { return E('span', {}, p); }))),
 					(c.specs && c.specs.length) ? E('table', { 'class': 'table', 'style': 'margin-top:.6em' }, c.specs.map(function(s) {
@@ -99,7 +107,11 @@ return view.extend({
 					c.notes ? E('div', { 'class': 'alert-message warning', 'style': 'margin-top:.8em' }, c.notes) : ''
 				])
 			]),
-			E('h3', {}, [ 'Valores ao vivo ', stamp ]),
+			lid ? E('h3', {}, [ 'Valores ao vivo ', stamp ]) : '',
+			(lid && lid != id && data.chips.chips[lid]) ? E('p', { 'class': 'ls-muted' }, [
+				'Este chip não tem leitura própria; estes são os valores de ',
+				E('a', { 'href': common.url(lid) }, data.chips.chips[lid].tab), '.'
+			]) : '',
 			live,
 			E('div', { 'class': 'ls-nav' }, [ nav(i - 1, '← %s'), nav(i + 1, '%s →') ])
 		]);

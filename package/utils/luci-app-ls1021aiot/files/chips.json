@@ -1,30 +1,160 @@
 {
 	"order": [
 		"soc",
-		"ddr",
+		"ddr0",
+		"ddr1",
+		"ddr-ecc",
+		"ddrclk-buf",
+		"qspi",
+		"eeprom",
 		"cpld",
-		"switch",
-		"phy",
-		"pmic",
-		"power",
+		"osc-y3",
 		"clocks",
+		"xtal-y2",
+		"versaclock",
+		"switch",
+		"phy1",
+		"phy2",
+		"serdes-mux",
+		"power",
+		"poe",
+		"ltc4412",
+		"ina220-12v",
+		"isl8201m",
+		"bus-switch",
+		"ltc2912",
+		"max811",
+		"lt3976-5v",
+		"lt3976-pmic",
+		"pmic",
+		"ina220-1v",
+		"ldo-mpcie",
+		"ldo-usb",
+		"ldo-rtc",
 		"adt7461",
 		"lm75",
-		"ina220-12v",
-		"ina220-1v",
 		"mma8451",
 		"pca9555",
 		"max1239",
-		"eeprom",
+		"repeater",
 		"audio",
 		"hdmi",
-		"qspi",
+		"hdmi-esd",
+		"i2s-u504",
+		"i2s-u505",
 		"usbhub",
+		"xtal-y500",
+		"usb-power",
 		"sdcard",
 		"opensda",
-		"repeater",
+		"xtal-y1",
+		"jtag-u25",
+		"jtag-u28",
+		"jtag-u27",
+		"jtag-u26",
 		"kw41z",
 		"fxos8700"
+	],
+	"groups": [
+		{
+			"name": "Processador e memória",
+			"ids": [
+				"soc",
+				"ddr0",
+				"ddr1",
+				"ddr-ecc",
+				"ddrclk-buf",
+				"qspi",
+				"eeprom"
+			]
+		},
+		{
+			"name": "Lógica e clocks",
+			"ids": [
+				"cpld",
+				"osc-y3",
+				"clocks",
+				"xtal-y2",
+				"versaclock"
+			]
+		},
+		{
+			"name": "Rede",
+			"ids": [
+				"switch",
+				"phy1",
+				"phy2",
+				"serdes-mux"
+			]
+		},
+		{
+			"name": "Alimentação",
+			"ids": [
+				"power",
+				"poe",
+				"ltc4412",
+				"ina220-12v",
+				"isl8201m",
+				"bus-switch",
+				"ltc2912",
+				"max811",
+				"lt3976-5v",
+				"lt3976-pmic",
+				"pmic",
+				"ina220-1v",
+				"ldo-mpcie",
+				"ldo-usb",
+				"ldo-rtc"
+			]
+		},
+		{
+			"name": "Sensores e expansão",
+			"ids": [
+				"adt7461",
+				"lm75",
+				"mma8451",
+				"pca9555",
+				"max1239",
+				"repeater"
+			]
+		},
+		{
+			"name": "Áudio e vídeo",
+			"ids": [
+				"audio",
+				"hdmi",
+				"hdmi-esd",
+				"i2s-u504",
+				"i2s-u505"
+			]
+		},
+		{
+			"name": "USB e cartão SD",
+			"ids": [
+				"usbhub",
+				"xtal-y500",
+				"usb-power",
+				"sdcard"
+			]
+		},
+		{
+			"name": "Depuração",
+			"ids": [
+				"opensda",
+				"xtal-y1",
+				"jtag-u25",
+				"jtag-u28",
+				"jtag-u27",
+				"jtag-u26"
+			]
+		},
+		{
+			"name": "FRDM-KW41Z",
+			"ids": [
+				"kw41z",
+				"fxos8700"
+			]
+		}
 	],
 	"chips": {
 		"soc": {
@@ -73,12 +203,12 @@
 			],
 			"notes": "O TMU interno responde \"Temperature check failed\" nesta revisão do silício, por isso a temperatura vem do ADT7461."
 		},
-		"ddr": {
-			"tab": "U14–U16 DDR3L",
-			"name": "Memória DDR3L",
-			"part": "3× DDR3L SDRAM 32M × 16 bits × 8 bancos (4 Gbit), FBGA96",
-			"summary": "1 GB de RAM: dois chips para os dados de 32 bits e um para o ECC.",
-			"description": "Três chips DDR3L de 1,35 V ligados ao controlador DDR do LS1021A. Dois formam o barramento de dados de 32 bits (1 GB) e o terceiro guarda os bits de ECC. A alimentação vem do PMIC: SW3 fornece GVDD (1,35 V) e SW4/REFOUT, o VTT e o VREF (0,675 V).",
+		"ddr0": {
+			"tab": "U16 DDR3L",
+			"name": "Memória DDR3L, bytes 0 e 1",
+			"part": "Micron MT41K256M16HA-125:E, DDR3L 4 Gbit (32M × 16 bits × 8 bancos), FBGA96",
+			"summary": "Os 16 bits de baixo do barramento de dados de 32 bits (DQ0–DQ15).",
+			"description": "Guarda os bytes 0 e 1 de cada palavra de 32 bits (DQ0–DQ15, DQS0/DQS1, DM0/DM1). Os três chips DDR3L de 1,35 V formam 1 GB de dados com ECC. A alimentação vem do PMIC: SW3 fornece o GVDD (1,35 V); SW4 e REFOUT, o VTT e o VREF (0,675 V).",
 			"bus": [
 				{
 					"bus": "Controlador DDR do LS1021A",
@@ -91,14 +221,146 @@
 			],
 			"specs": [
 				[
-					"Tensão",
-					"1,35 V (GVDD, PMIC SW3)"
+					"Linhas",
+					"DQ0–DQ15"
 				],
 				[
-					"Capacidade",
-					"1 GB de dados + ECC"
+					"Tensão",
+					"1,35 V (GVDD, PMIC SW3)"
 				]
-			]
+			],
+			"live": "ddr"
+		},
+		"ddr1": {
+			"tab": "U15 DDR3L",
+			"name": "Memória DDR3L, bytes 2 e 3",
+			"part": "Micron MT41K256M16HA-125:E, DDR3L 4 Gbit (32M × 16 bits × 8 bancos), FBGA96",
+			"summary": "Os 16 bits de cima do barramento de dados de 32 bits (DQ16–DQ31).",
+			"description": "Guarda os bytes 2 e 3 de cada palavra de 32 bits (DQ16–DQ31, DQS2/DQS3, DM2/DM3). Os três chips DDR3L de 1,35 V formam 1 GB de dados com ECC. A alimentação vem do PMIC: SW3 fornece o GVDD (1,35 V); SW4 e REFOUT, o VTT e o VREF (0,675 V).",
+			"bus": [
+				{
+					"bus": "Controlador DDR do LS1021A",
+					"addr": "0x80000000",
+					"linux": "/proc/meminfo"
+				}
+			],
+			"proto": [
+				"DDR3L"
+			],
+			"specs": [
+				[
+					"Linhas",
+					"DQ16–DQ31"
+				],
+				[
+					"Tensão",
+					"1,35 V (GVDD, PMIC SW3)"
+				]
+			],
+			"live": "ddr"
+		},
+		"ddr-ecc": {
+			"tab": "U14 DDR3L",
+			"name": "Memória DDR3L do ECC",
+			"part": "Micron MT41K256M16HA-125:E, DDR3L 4 Gbit (32M × 16 bits × 8 bancos), FBGA96",
+			"summary": "Guarda os bits de ECC, com que o controlador corrige erros de um bit.",
+			"description": "Só usa as linhas ECC0–ECC3 (com DQS8 e DM8): o controlador DDR do LS1021A grava nelas o código de correção de cada palavra e, na leitura, corrige um bit errado e detecta dois. Os três chips DDR3L de 1,35 V formam 1 GB de dados com ECC. A alimentação vem do PMIC: SW3 fornece o GVDD (1,35 V); SW4 e REFOUT, o VTT e o VREF (0,675 V).",
+			"bus": [
+				{
+					"bus": "Controlador DDR do LS1021A",
+					"addr": "0x80000000",
+					"linux": "/sys/devices/system/edac/mc"
+				}
+			],
+			"proto": [
+				"DDR3L",
+				"ECC (SEC-DED)"
+			],
+			"specs": [
+				[
+					"Linhas",
+					"ECC0–ECC3"
+				],
+				[
+					"Tensão",
+					"1,35 V (GVDD, PMIC SW3)"
+				]
+			],
+			"live": "ddr"
+		},
+		"ddrclk-buf": {
+			"tab": "U20 74LVC1G126",
+			"name": "Buffer do DDRCLK",
+			"part": "TI SN74LVC1G126DCKR, SC70-5",
+			"summary": "Leva o DDRCLK do gerador U29 ao LS1021A.",
+			"description": "Buffer de um bit, sempre habilitado. Recebe o DDRCLK do U29 e o entrega ao pino DDRCLK (H18) do LS1021A pelo divisor R591/R592, que baixa o nível para a entrada de 1,8 V.",
+			"bus": [],
+			"proto": [
+				"Lógica (buffer)"
+			],
+			"specs": [
+				[
+					"Entrada",
+					"DDRCLK do U29"
+				],
+				[
+					"Saída",
+					"DDRCLK do LS1021A (H18)"
+				]
+			],
+			"live": "ddr"
+		},
+		"qspi": {
+			"tab": "U24 QSPI",
+			"name": "Flash NOR QuadSPI",
+			"part": "Cypress/Spansion S70FL01GS (1 Gbit, 128 MB), SOIC16",
+			"summary": "Flash de boot alternativa: com ela a placa dá boot sem o cartão SD.",
+			"description": "Flash NOR SPI de 1 Gbit (duas pastilhas de 512 Mbit) no controlador QuadSPI do LS1021A. Pode guardar RCW, U-Boot e sistema, para dar boot sem o cartão SD. Aqui ela fica intocada.",
+			"bus": [
+				{
+					"bus": "QuadSPI",
+					"addr": "0x40000000",
+					"linux": "sem driver (desligado de propósito)"
+				}
+			],
+			"proto": [
+				"SPI (1/2/4 bits)"
+			],
+			"specs": [
+				[
+					"Capacidade",
+					"128 MB"
+				],
+				[
+					"Velocidade",
+					"até 133 MHz"
+				]
+			],
+			"notes": "Somente leitura: o driver QSPI está desligado porque ele poderia escrever nos registradores de configuração da flash."
+		},
+		"eeprom": {
+			"tab": "U501 EEPROM",
+			"name": "EEPROM da placa (verso)",
+			"part": "24C32/AT24C64-compatível, TSSOP8, endereçamento de 16 bits",
+			"summary": "Guarda a identidade da placa: número de série, revisão, data e os endereços MAC.",
+			"description": "A NXP grava na fábrica um registro NXID: \"NXID\", número de série, revisão, data de fabricação (BCD) e os MACs dos eTSEC, com CRC. O U-Boot lê os MACs dali. Fica no verso da placa, embaixo da área do mini PCIe P1.",
+			"bus": [
+				{
+					"bus": "I2C (i2c-0)",
+					"addr": "0x51",
+					"linux": "nvmem 0-00510 (read-only)"
+				}
+			],
+			"proto": [
+				"I2C"
+			],
+			"specs": [
+				[
+					"Formato",
+					"NXID v1 (U-Boot board/freescale/common/sys_eeprom.c)"
+				]
+			],
+			"notes": "O Linux só lê: o nó do DTS tem read-only."
 		},
 		"cpld": {
 			"tab": "U33 CPLD",
@@ -127,6 +389,116 @@
 				]
 			],
 			"notes": "Regras: nunca ler 32 bits de uma vez, e preservar os bits 1 e 3 (o valor-sombra padrão é 0xF6)."
+		},
+		"osc-y3": {
+			"tab": "Y3 25 MHz",
+			"name": "Oscilador do CPLD",
+			"part": "Abracon ASV-25.000MHZ-EJ-T, 7 × 5 mm",
+			"summary": "Um clock de 25 MHz próprio do CPLD, independente dos geradores.",
+			"description": "Oscilador completo (não só o cristal) de 3,3 V. A saída vai ao pino A9 do CPLD (PLD_CLK1), que assim tem um clock desde que o +3V3 sobe, antes de os geradores de clock funcionarem.",
+			"bus": [],
+			"proto": [
+				"LVCMOS"
+			],
+			"specs": [
+				[
+					"Frequência",
+					"25 MHz"
+				],
+				[
+					"Destino",
+					"CPLD, PLD_CLK1"
+				]
+			],
+			"live": "cpld"
+		},
+		"clocks": {
+			"tab": "U29 6V49205B",
+			"name": "Gerador de clock principal",
+			"part": "IDT (Renesas) 6V49205BNLGI, QFN48",
+			"summary": "Gera, a partir do cristal Y2 de 25 MHz, quase todos os clocks da placa.",
+			"description": "Sintetizador com várias saídas: o DIFF_SYSCLK e o SYSCLK do LS1021A, o DDRCLK (pelo buffer U20), os dois clocks de referência do SerDes (SD1/SD2), os clocks dos dois slots mini PCIe, o de 125 MHz do LS1021A, os 25 MHz dos PHYs U36 e U37 e do RGMII do switch, e a referência de 25 MHz do VersaClock (U21). O CPLD escolhe a frequência por CLKGEN_FS0/FS1.",
+			"bus": [
+				{
+					"bus": "I2C (i2c-0)",
+					"addr": "0x69",
+					"linux": "sem driver"
+				}
+			],
+			"proto": [
+				"I2C",
+				"HCSL/LVDS (clocks diferenciais)"
+			],
+			"specs": [
+				[
+					"Referência",
+					"cristal Y2, 25 MHz"
+				],
+				[
+					"DDRCLK",
+					"100 MHz"
+				],
+				[
+					"125 MHz",
+					"para o LS1021A (pino Y4)"
+				],
+				[
+					"Seleção",
+					"CLKGEN_FS0/FS1 (CPLD)"
+				]
+			],
+			"notes": "Nunca escrevemos no endereço 0x69: mudar um clock trava a placa.",
+			"live": "clocks"
+		},
+		"xtal-y2": {
+			"tab": "Y2 25 MHz",
+			"name": "Cristal do gerador de clock",
+			"part": "ECS ECS-250-8-30B-CKM, 25 MHz, 8 pF",
+			"summary": "A referência de 25 MHz do U29, de onde vêm quase todos os clocks da placa.",
+			"description": "Cristal de 25 MHz e 10 ppm ligado ao oscilador interno do 6V49205B (U29).",
+			"bus": [],
+			"proto": [
+				"Cristal"
+			],
+			"specs": [
+				[
+					"Frequência",
+					"25 MHz"
+				],
+				[
+					"Precisão",
+					"10 ppm"
+				]
+			],
+			"live": "clocks"
+		},
+		"versaclock": {
+			"tab": "U21 VersaClock 5",
+			"name": "Gerador de clock programável",
+			"part": "IDT (Renesas) 5P49V5901A031NLGI, VFQFPN24",
+			"summary": "Gera o MCLK do codec de áudio, um clock do CPLD e a fonte alternativa do SYSCLK.",
+			"description": "Gerador com PLL fracionário e quatro saídas, com a configuração gravada em OTP. Recebe 25 MHz do U29 e fornece o CODEC_SYS_MCLK do SGTL5000, o PLD_CLK0 do CPLD e o AUX_CLK, que pode virar o SYSCLK do LS1021A conforme as chaves SW2[6:7]: 100 MHz por padrão, 99 MHz (HDMI) ou 96 MHz (Profibus). Os pinos SEL0/SEL1 vão ao CPLD.",
+			"bus": [
+				{
+					"bus": "I2C",
+					"addr": "isolado do barramento",
+					"linux": "sem driver"
+				}
+			],
+			"proto": [
+				"HCSL/LVCMOS"
+			],
+			"specs": [
+				[
+					"Referência",
+					"25 MHz do U29"
+				],
+				[
+					"Saídas",
+					"MCLK do codec, PLD_CLK0, AUX_CLK/SYSCLK"
+				]
+			],
+			"live": "clocks"
 		},
 		"switch": {
 			"tab": "U31 RTL8365MB",
@@ -164,22 +536,22 @@
 			],
 			"notes": "O pino D13 do Arduino é o SCK deste SPI: um shield que force esse pino derruba a rede."
 		},
-		"phy": {
-			"tab": "U36/U37 AR8033",
-			"name": "PHYs Gigabit SGMII",
-			"part": "2× Qualcomm Atheros AR8033, QFN48",
-			"summary": "Os PHYs das tomadas ETH0 e ETH1 (P3), ligados por SGMII ao eTSEC1 e ao eTSEC2.",
-			"description": "Cada AR8033 converte o SGMII do LS1021A para 10/100/1000BASE-T na tomada dupla P3. Os dois ficam no barramento MDIO do eTSEC1. O SerDes do SGMII2 é compartilhado com o SATA, conforme o RCW.",
+		"phy1": {
+			"tab": "U36 AR8033",
+			"name": "PHY Gigabit da ETH0",
+			"part": "Qualcomm Atheros AR8033-AL1A, QFN48",
+			"summary": "O PHY da tomada ETH0 (P3), ligado por SGMII ao eTSEC1: é a eth0 do Linux.",
+			"description": "Converte o SGMII do LS1021A em 10/100/1000BASE-T numa das tomadas do P3. O SGMII dele passa pelo multiplexador U23, que divide a pista B do SerDes com o SATA: o CPLD escolhe o caminho. Fica no barramento MDIO do eTSEC1, junto com o U37.",
 			"bus": [
 				{
 					"bus": "MDIO (eTSEC1)",
-					"addr": "0x01 e 0x03",
+					"addr": "0x01",
 					"linux": "/sys/bus/mdio_bus/devices"
 				},
 				{
 					"bus": "SGMII",
-					"addr": "eTSEC1 (eth0), eTSEC2 (eth1)",
-					"linux": "/sys/class/net/eth0"
+					"addr": "eTSEC1 (2D10000)",
+					"linux": "eth0"
 				}
 			],
 			"proto": [
@@ -190,13 +562,337 @@
 			"specs": [
 				[
 					"Clock",
-					"25 MHz (25MHz_SGMII1_CLK / 25MHz_SGMII2_CLK)"
+					"25 MHz (25MHZ_SGMII1_CLK, do U29)"
 				],
 				[
 					"Reset",
-					"RST_SGMII1_PHY_B / RST_SGMII2_PHY_B, pelo CPLD"
+					"RST_SGMII1_PHY_B, pelo CPLD"
+				]
+			],
+			"live": "phy"
+		},
+		"phy2": {
+			"tab": "U37 AR8033",
+			"name": "PHY Gigabit da ETH1",
+			"part": "Qualcomm Atheros AR8033-AL1A, QFN48",
+			"summary": "O PHY da tomada ETH1 (P3), ligado por SGMII ao eTSEC2.",
+			"description": "Converte o SGMII2 do LS1021A em 10/100/1000BASE-T na outra tomada do P3. Fica no mesmo barramento MDIO do eTSEC1 que o U36.",
+			"bus": [
+				{
+					"bus": "MDIO (eTSEC1)",
+					"addr": "0x03",
+					"linux": "/sys/bus/mdio_bus/devices"
+				},
+				{
+					"bus": "SGMII",
+					"addr": "eTSEC2 (2D50000)",
+					"linux": "eth1"
+				}
+			],
+			"proto": [
+				"SGMII 1,25 Gbit/s",
+				"MDIO/MDC (IEEE 802.3 cláusula 22)",
+				"1000BASE-T"
+			],
+			"specs": [
+				[
+					"Clock",
+					"25 MHz (25MHZ_SGMII2_CLK, do U29)"
+				],
+				[
+					"Reset",
+					"RST_SGMII2_PHY_B, pelo CPLD"
+				]
+			],
+			"live": "phy"
+		},
+		"serdes-mux": {
+			"tab": "U23 CBTL02043A",
+			"name": "Multiplexador SATA/SGMII",
+			"part": "NXP CBTL02043ABQ, DHVQFN20",
+			"summary": "Divide a pista B do SerDes entre o SATA e o SGMII do PHY U36.",
+			"description": "Multiplexador passivo de sinais diferenciais (até 8 Gbit/s). A pista B do SerDes do LS1021A vai ou para o conector SATA (SATA1) ou para o PHY U36 (SGMII1, eth0). O CPLD escolhe o caminho por MUX_SATA_SGMII1 e pode desligá-lo por MUX_SHUTDN; com eth0 funcionando, o caminho atual é o SGMII.",
+			"bus": [],
+			"proto": [
+				"PCIe/SATA/SGMII (sinais diferenciais)"
+			],
+			"specs": [
+				[
+					"Seleção",
+					"MUX_SATA_SGMII1 (CPLD)"
+				],
+				[
+					"Desliga",
+					"MUX_SHUTDN (CPLD)"
+				]
+			],
+			"live": "phy"
+		},
+		"power": {
+			"tab": "J1 12 V",
+			"name": "Entrada de 12 V e árvore de alimentação",
+			"part": "Conector J1, 12 V",
+			"summary": "De onde vem a energia da placa e quem gera cada tensão.",
+			"description": "A placa recebe 12 V pelo J1, por um diodo Schottky (D1), ou pelo PoE: o módulo U38 gera 12 V e o LTC4412 (U4) faz o papel de diodo ideal, pelo MOSFET Q1. Depois do resistor shunt medido pelo INA220 (U1), os 12 V alimentam três conversores: o ISL8201M (U3) gera os 3,3 V da placa; um LT3976 (U11), os 5 V; e outro LT3976 (U12), os 3,3 V do PMIC (U13), que gera as tensões do LS1021A e da DDR3L. Dos 5 V saem os LDOs U30 (1,5 V do mini PCIe) e U502 (1,25 V do hub USB). O CPLD liga cada conversor e acompanha os sinais de “power good”.",
+			"bus": [
+				{
+					"bus": "I2C (i2c-0)",
+					"addr": "0x45 (INA220 U1)",
+					"linux": "hwmon ina220"
+				}
+			],
+			"proto": [
+				"Analógico (conversores DC-DC)"
+			],
+			"specs": [
+				[
+					"U3 ISL8201M",
+					"+3V3 da placa"
+				],
+				[
+					"U11 LT3976",
+					"+5V0: USB, SATA, U30, U502"
+				],
+				[
+					"U12 LT3976",
+					"+3V3_PMIC"
+				],
+				[
+					"U38 MQ7800",
+					"PoE de 36–58 V para 12 V"
+				],
+				[
+					"U13 PMIC",
+					"núcleo, DDR, E/S do LS1021A"
 				]
 			]
+		},
+		"poe": {
+			"tab": "U38 MQ7800",
+			"name": "Módulo PoE",
+			"part": "Union Microsystems MQ7800T120R, SIP10",
+			"summary": "Converte os 36–58 V do Power over Ethernet em 12 V para a placa.",
+			"description": "Módulo de dispositivo alimentado (PD) do PoE: entrega até 1 A em 12 V (+12V0_POE). O LTC4412 (U4) junta essa saída à do conector J1 sem que uma alimente a outra.",
+			"bus": [],
+			"proto": [
+				"IEEE 802.3af (PoE)"
+			],
+			"specs": [
+				[
+					"Entrada",
+					"36–58 V"
+				],
+				[
+					"Saída",
+					"+12V0_POE, até 1 A"
+				]
+			],
+			"live": "power"
+		},
+		"ltc4412": {
+			"tab": "U4 LTC4412",
+			"name": "Diodo ideal do PoE",
+			"part": "Linear Technology (ADI) LTC4412IS6, TSOT-23",
+			"summary": "Junta os 12 V do PoE aos do conector J1, com perda bem menor que a de um diodo.",
+			"description": "Controlador de “diodo ideal”: comanda o MOSFET P Q1 entre o +12V0_POE (do U38) e o +12V0_VBUS, que também recebe o J1 pelo diodo D1. Se a tensão do lado da placa passa a do PoE, ele abre o Q1. O pino STAT vai ao CPLD (POE_STAT), que fica sabendo se a placa está no PoE.",
+			"bus": [],
+			"proto": [
+				"Analógico (PowerPath)"
+			],
+			"specs": [
+				[
+					"Chave",
+					"Q1, MOSFET P"
+				],
+				[
+					"Estado",
+					"POE_STAT (CPLD)"
+				]
+			],
+			"live": "power"
+		},
+		"ina220-12v": {
+			"tab": "U1 INA220 12V",
+			"name": "Monitor de corrente da entrada de 12 V",
+			"part": "TI INA220AIDGST, MSOP10",
+			"summary": "Mede a tensão, a corrente e a potência da entrada de 12 V.",
+			"description": "Mede a queda de tensão num resistor shunt para calcular a corrente, e a tensão do barramento. A potência sai do produto das duas. Mostra o consumo total da placa, incluindo a FRDM e o que estiver ligado no USB.",
+			"bus": [
+				{
+					"bus": "I2C (i2c-0)",
+					"addr": "0x45",
+					"linux": "hwmon ina220"
+				}
+			],
+			"proto": [
+				"I2C/SMBus"
+			],
+			"specs": [
+				[
+					"Barramento",
+					"0–26 V"
+				],
+				[
+					"ADC",
+					"12 bits"
+				]
+			]
+		},
+		"isl8201m": {
+			"tab": "U3 ISL8201M",
+			"name": "Conversor de 3,3 V",
+			"part": "Intersil (Renesas) ISL8201MIRZ, módulo QFN-15",
+			"summary": "Gera o +3V3 da placa a partir dos 12 V: até 10 A.",
+			"description": "Módulo buck completo, com o indutor dentro do encapsulamento. Alimenta o CPLD, os sensores I2C, os PHYs, o switch e quase toda a lógica de 3,3 V. O EN (PS5_0A_EN) é controlado pelo CPLD através da chave U8, e o LTC2912 (U34) avisa o CPLD quando os 3,3 V estão dentro da faixa.",
+			"bus": [],
+			"proto": [
+				"Analógico (buck síncrono)"
+			],
+			"specs": [
+				[
+					"Entrada",
+					"+12V0"
+				],
+				[
+					"Saída",
+					"+3V3, até 10 A"
+				],
+				[
+					"Liga",
+					"PS5_0A_EN (CPLD, pelo U8)"
+				]
+			],
+			"live": "power"
+		},
+		"bus-switch": {
+			"tab": "U8 74CBTLV1G125",
+			"name": "Chave do EN do conversor de 3,3 V",
+			"part": "TI SN74CBTLV1G125DCKR, SC70-5",
+			"summary": "Deixa o CPLD desligar o ISL8201M (U3).",
+			"description": "Uma chave de barramento de um bit: com o PS_VCC3.3_EN do CPLD em nível baixo, ela liga o EN do ISL8201M (PS5_0A_EN) ao terra e o conversor desliga; em nível alto, a chave abre e o EN fica livre.",
+			"bus": [],
+			"proto": [
+				"Lógica (chave FET)"
+			],
+			"specs": [
+				[
+					"Controle",
+					"PS_VCC3.3_EN (CPLD)"
+				],
+				[
+					"Chaveia",
+					"PS5_0A_EN (U3)"
+				]
+			],
+			"live": "cpld"
+		},
+		"ltc2912": {
+			"tab": "U34 LTC2912",
+			"name": "Monitor do +3V3",
+			"part": "Linear Technology (ADI) LTC2912CTS8-2, TSOT-23",
+			"summary": "Avisa o CPLD quando os 3,3 V da placa estão dentro da faixa.",
+			"description": "Supervisor de subtensão e sobretensão: compara o +3V3, por um divisor de três resistores (R711–R713), com dois limites. As duas saídas, unidas, formam o PS_VCC3.3_PG que o CPLD lê antes de seguir a sequência de energia.",
+			"bus": [],
+			"proto": [
+				"Analógico (supervisor)"
+			],
+			"specs": [
+				[
+					"Monitora",
+					"+3V3 (ISL8201M, U3)"
+				],
+				[
+					"Saída",
+					"PS_VCC3.3_PG (CPLD)"
+				]
+			],
+			"live": "cpld"
+		},
+		"max811": {
+			"tab": "U9 MAX811",
+			"name": "Supervisor de reset",
+			"part": "Maxim (ADI) MAX811SEUS, SOT143",
+			"summary": "Segura o reset do CPLD enquanto o 3,3 V não estabiliza e quando o botão RESET é apertado.",
+			"description": "Monitora o +3V3 e mantém o RST_PLD_B (reset do CPLD) baixo por pelo menos 140 ms depois que ele passa do limite. A entrada de reset manual é o RST_TGTMCU, ligado ao botão SW1 (RESET no painel) e ao K22 da interface de depuração: é por ele que o dapreset.py reinicia a placa.",
+			"bus": [],
+			"proto": [
+				"Analógico (supervisor)"
+			],
+			"specs": [
+				[
+					"Monitora",
+					"+3V3"
+				],
+				[
+					"Reset manual",
+					"RST_TGTMCU (SW1, K22)"
+				],
+				[
+					"Saída",
+					"RST_PLD_B (CPLD)"
+				]
+			],
+			"live": "cpld"
+		},
+		"lt3976-5v": {
+			"tab": "U11 LT3976",
+			"name": "Conversor de 5 V",
+			"part": "Linear Technology (ADI) LT3976EMSE, MSOP16",
+			"summary": "Gera o +5V0 do USB, do SATA e dos LDOs U30 e U502.",
+			"description": "Regulador buck de 40 V e 5 A. O CPLD o liga por PS_VCC5.0_EN e lê o PS_VCC5.0_PG, que indica que os 5 V chegaram. Dele dependem as tomadas USB (pelo MAX1558, U35), o conector SATA, o 5 V do HDMI e os LDOs de 1,5 V (U30) e 1,25 V (U502).",
+			"bus": [],
+			"proto": [
+				"Analógico (buck)"
+			],
+			"specs": [
+				[
+					"Entrada",
+					"+12V0"
+				],
+				[
+					"Saída",
+					"+5V0"
+				],
+				[
+					"Liga",
+					"PS_VCC5.0_EN (CPLD)"
+				],
+				[
+					"Power good",
+					"PS_VCC5.0_PG (CPLD)"
+				]
+			],
+			"live": "power"
+		},
+		"lt3976-pmic": {
+			"tab": "U12 LT3976",
+			"name": "Conversor de 3,3 V do PMIC",
+			"part": "Linear Technology (ADI) LT3976EMSE, MSOP16",
+			"summary": "Gera o +3V3_PMIC, a entrada do PMIC (U13).",
+			"description": "O mesmo regulador do U11, ajustado para 3,3 V e separado do +3V3 da placa: alimenta só o PMIC, que gera a partir dele o núcleo, a DDR3L e as E/S do LS1021A. O CPLD o liga por PS_VCC3.3_PMIC_EN e espera o PS_VCC3.3_PMIC_PG antes de seguir a sequência. O LED D7 (PWR no painel) é alimentado pelo +3V3_PMIC.",
+			"bus": [],
+			"proto": [
+				"Analógico (buck)"
+			],
+			"specs": [
+				[
+					"Entrada",
+					"+12V0"
+				],
+				[
+					"Saída",
+					"+3V3_PMIC"
+				],
+				[
+					"Liga",
+					"PS_VCC3.3_PMIC_EN (CPLD)"
+				],
+				[
+					"Power good",
+					"PS_VCC3.3_PMIC_PG (CPLD)"
+				]
+			],
+			"live": "power"
 		},
 		"pmic": {
 			"tab": "U13 PMIC",
@@ -230,73 +926,98 @@
 			],
 			"notes": "Nunca escrevemos no endereço 0x08: um registrador errado corta a alimentação do processador."
 		},
-		"power": {
-			"tab": "Alimentação",
-			"name": "Entrada e conversores de alimentação",
-			"part": "U3 Intersil ISL8201MIRZ, U11/U12 Linear LT3976, U38 módulo PoE",
-			"summary": "A entrada de 12 V e os conversores de 3,3 V e 5 V da placa.",
-			"description": "A placa recebe 12 V pelo conector J1 ou pelo PoE: o módulo U38 converte os 36–58 V em 12 V, até 12,9 W. A partir dos 12 V, o ISL8201M (U3, 10 A) gera os 3,3 V da placa e do CPLD, um LT3976 (U11) gera os 5 V do USB, do SATA e dos LDOs U30/U502, e outro LT3976 (U12) gera os 3,3 V do PMIC. O INA220 U1 mede a entrada de 12 V.",
+		"ina220-1v": {
+			"tab": "U17 INA220 1V",
+			"name": "Monitor de corrente do núcleo de 1,0 V",
+			"part": "TI INA220AIDGST, MSOP10",
+			"summary": "Mede o VDD do LS1021A, que sai do SW1 do PMIC.",
+			"description": "O mesmo INA220, agora no trilho de 1,0 V do núcleo do processador. A corrente acompanha a carga da CPU: dá para ver o processador trabalhando.",
 			"bus": [
 				{
 					"bus": "I2C (i2c-0)",
-					"addr": "0x45 (INA220 U1)",
+					"addr": "0x44",
 					"linux": "hwmon ina220"
 				}
 			],
 			"proto": [
-				"Analógico (conversores DC-DC)"
+				"I2C/SMBus"
 			],
 			"specs": [
 				[
-					"U3 ISL8201M",
-					"+3V3 da placa"
-				],
-				[
-					"U11 LT3976",
-					"+5V0: USB, SATA, U30, U502"
-				],
-				[
-					"U12 LT3976",
-					"+3V3_PMIC"
-				],
-				[
-					"U38",
-					"PoE de 36–58 V para 12 V"
+					"Trilho",
+					"+1V0_VDDCORE (PMIC SW1)"
 				]
 			]
 		},
-		"clocks": {
-			"tab": "U29/U21 Clocks",
-			"name": "Geradores de clock",
-			"part": "IDT 6V49205BNLGI (U29) e IDT 5P49V5901A031 VersaClock 5 (U21)",
-			"summary": "Geram o SYSCLK, o DDRCLK, os clocks do SerDes e o de 125 MHz do RGMII.",
-			"description": "O U29 (6V49205B) gera o DIFF_SYSCLK de 100 MHz, o DDRCLK, os dois SERDES_REF_CLK de 100 MHz e o EC3_GTX_CLK de 125 MHz do RGMII do switch. O U21 (VersaClock 5) é a fonte principal do SYSCLK, escolhida por SW2[6:7]: 100 MHz por padrão, 99 MHz (HDMI) ou 96 MHz (Profibus).",
-			"bus": [
-				{
-					"bus": "I2C (i2c-0)",
-					"addr": "0x69 (U29); U21 isolado do barramento",
-					"linux": "sem driver"
-				}
-			],
+		"ldo-mpcie": {
+			"tab": "U30 MAX8869",
+			"name": "LDO de 1,5 V do mini PCIe",
+			"part": "Maxim (ADI) MAX8869EUE25, TSSOP16",
+			"summary": "Gera o +1V5_MPCIE dos slots mini PCIe P1 e P2.",
+			"description": "Regulador linear de 1 A, ligado aos +5V0. A saída é ajustada para 1,5 V pelo divisor R98/R99 e vai aos pinos de 1,5 V (6, 28 e 48) dos dois slots mini PCIe.",
+			"bus": [],
 			"proto": [
-				"I2C",
-				"HCSL/LVDS (clocks diferenciais)"
+				"Analógico (LDO)"
 			],
 			"specs": [
 				[
-					"SYSCLK",
-					"100 MHz (U21, SW2[6:7] = 00)"
+					"Entrada",
+					"+5V0"
 				],
 				[
-					"DDRCLK",
-					"100 MHz"
-				],
-				[
-					"EC3_GTX_CLK",
-					"125 MHz"
+					"Saída",
+					"+1V5_MPCIE"
 				]
 			],
-			"notes": "Nunca escrevemos no endereço 0x69: mudar um clock trava a placa."
+			"live": false
+		},
+		"ldo-usb": {
+			"tab": "U502 MAX8869",
+			"name": "LDO de 1,25 V do hub USB (verso)",
+			"part": "Maxim (ADI) MAX8869EUE25, TSSOP16",
+			"summary": "Gera o +1V25, o núcleo do hub USB 3.0 (U503).",
+			"description": "O mesmo regulador do U30, no verso da placa, ajustado para 1,25 V pelo divisor R701/R702. Alimenta os pinos de núcleo do USB5534B.",
+			"bus": [],
+			"proto": [
+				"Analógico (LDO)"
+			],
+			"specs": [
+				[
+					"Entrada",
+					"+5V0"
+				],
+				[
+					"Saída",
+					"+1V25"
+				]
+			],
+			"live": "usbhub"
+		},
+		"ldo-rtc": {
+			"tab": "U500 NCP571",
+			"name": "LDO de 1,0 V da bateria (verso)",
+			"part": "ON Semiconductor NCP571MN10TBG, DFN6",
+			"summary": "Gera, a partir da bateria BT1, o VDD_LP do domínio de baixo consumo do LS1021A.",
+			"description": "Regulador linear de 150 mA e 1,0 V ligado à bateria de lítio (VBAT, BT1). A saída VDD_LP vai ao pino T6 do LS1021A, o domínio que continua alimentado com a placa desligada. O CPLD o liga por LP_PSU_EN.",
+			"bus": [],
+			"proto": [
+				"Analógico (LDO)"
+			],
+			"specs": [
+				[
+					"Entrada",
+					"VBAT (BT1)"
+				],
+				[
+					"Saída",
+					"VDD_LP, 1,0 V"
+				],
+				[
+					"Liga",
+					"LP_PSU_EN (CPLD)"
+				]
+			],
+			"live": false
 		},
 		"adt7461": {
 			"tab": "U32 ADT7461",
@@ -350,56 +1071,6 @@
 				[
 					"Faixa",
 					"−55 a +125 °C"
-				]
-			]
-		},
-		"ina220-12v": {
-			"tab": "U1 INA220 12V",
-			"name": "Monitor de corrente da entrada de 12 V",
-			"part": "TI INA220AIDGST, MSOP10",
-			"summary": "Mede a tensão, a corrente e a potência da entrada de 12 V.",
-			"description": "Mede a queda de tensão num resistor shunt para calcular a corrente, e a tensão do barramento. A potência sai do produto das duas. Mostra o consumo total da placa, incluindo a FRDM e o que estiver ligado no USB.",
-			"bus": [
-				{
-					"bus": "I2C (i2c-0)",
-					"addr": "0x45",
-					"linux": "hwmon ina220"
-				}
-			],
-			"proto": [
-				"I2C/SMBus"
-			],
-			"specs": [
-				[
-					"Barramento",
-					"0–26 V"
-				],
-				[
-					"ADC",
-					"12 bits"
-				]
-			]
-		},
-		"ina220-1v": {
-			"tab": "U17 INA220 1V",
-			"name": "Monitor de corrente do núcleo de 1,0 V",
-			"part": "TI INA220AIDGST, MSOP10",
-			"summary": "Mede o VDD do LS1021A, que sai do SW1 do PMIC.",
-			"description": "O mesmo INA220, agora no trilho de 1,0 V do núcleo do processador. A corrente acompanha a carga da CPU: dá para ver o processador trabalhando.",
-			"bus": [
-				{
-					"bus": "I2C (i2c-0)",
-					"addr": "0x44",
-					"linux": "hwmon ina220"
-				}
-			],
-			"proto": [
-				"I2C/SMBus"
-			],
-			"specs": [
-				[
-					"Trilho",
-					"+1V0_VDDCORE (PMIC SW1)"
 				]
 			]
 		},
@@ -497,29 +1168,22 @@
 				]
 			]
 		},
-		"eeprom": {
-			"tab": "U501 EEPROM",
-			"name": "EEPROM da placa (verso)",
-			"part": "24C32/AT24C64-compatível, TSSOP8, endereçamento de 16 bits",
-			"summary": "Guarda a identidade da placa: número de série, revisão, data e os endereços MAC.",
-			"description": "A NXP grava na fábrica um registro NXID: \"NXID\", número de série, revisão, data de fabricação (BCD) e os MACs dos eTSEC, com CRC. O U-Boot lê os MACs dali. Fica no verso da placa, embaixo da área do mini PCIe P1.",
+		"repeater": {
+			"tab": "U10 PCA9515",
+			"name": "Repetidor I2C do Arduino",
+			"part": "NXP PCA9515A, TSSOP8",
+			"summary": "Leva o I2C da placa aos pinos SDA e SCL dos headers Arduino (J8 e J15).",
+			"description": "Isola a capacitância do shield e repete os sinais do I2C2 até I2C2_SDA_EXP/I2C2_SCL_EXP, nos pinos 9 e 10 do J8 e 5 e 6 do J15. O EN vem do CPLD (i2c_repeater_dis = 1, sempre ligado). Na placa, o I2C1 e o I2C2 estão unidos pelos resistores R3168/R3169, então o shield aparece no mesmo i2c-0: é assim que o FXOS8700 da FRDM-KW41Z responde em 0x1F.",
 			"bus": [
 				{
-					"bus": "I2C (i2c-0)",
-					"addr": "0x51",
-					"linux": "nvmem 0-00510 (read-only)"
+					"bus": "I2C (i2c-0) ↔ Arduino",
+					"addr": "transparente",
+					"linux": "—"
 				}
 			],
 			"proto": [
-				"I2C"
-			],
-			"specs": [
-				[
-					"Formato",
-					"NXID v1 (U-Boot board/freescale/common/sys_eeprom.c)"
-				]
-			],
-			"notes": "O Linux só lê: o nó do DTS tem read-only."
+				"I2C (até 400 kHz)"
+			]
 		},
 		"audio": {
 			"tab": "U5 SGTL5000",
@@ -584,33 +1248,73 @@
 			],
 			"notes": "Não escrevemos nos endereços 0x39, 0x3D e 0x60, nem varremos o i2c-1: isso já travou o barramento."
 		},
-		"qspi": {
-			"tab": "U24 QSPI",
-			"name": "Flash NOR QuadSPI",
-			"part": "Cypress/Spansion S70FL01GS (1 Gbit, 128 MB), SOIC16",
-			"summary": "Flash de boot alternativa: com ela a placa dá boot sem o cartão SD.",
-			"description": "Flash NOR SPI de 1 Gbit (duas pastilhas de 512 Mbit) no controlador QuadSPI do LS1021A. Pode guardar RCW, U-Boot e sistema, para dar boot sem o cartão SD. Aqui ela fica intocada.",
-			"bus": [
-				{
-					"bus": "QuadSPI",
-					"addr": "0x40000000",
-					"linux": "sem driver (desligado de propósito)"
-				}
-			],
+		"hdmi-esd": {
+			"tab": "U40 CM2020",
+			"name": "Proteção e interface do conector HDMI",
+			"part": "ON Semiconductor CM2020-01TR, TSSOP38",
+			"summary": "Protege as linhas do HDMI contra ESD e adapta o DDC, o HPD e o CEC ao conector.",
+			"description": "Fica entre o SiI9022A (U39) e o conector J27: os quatro pares TMDS passam por ele com proteção ESD, e o DDC (I2C do monitor, o i2c-1), o hot-plug e o CEC são traduzidos entre os 3,3 V da placa e os 5 V do HDMI.",
+			"bus": [],
 			"proto": [
-				"SPI (1/2/4 bits)"
+				"TMDS",
+				"DDC (I2C)",
+				"CEC"
 			],
 			"specs": [
 				[
-					"Capacidade",
-					"128 MB"
+					"Lado da placa",
+					"+3V3_HDMI_IO_VCC"
 				],
 				[
-					"Velocidade",
-					"até 133 MHz"
+					"Lado do conector",
+					"+5V0, HDMI_5V"
 				]
 			],
-			"notes": "Somente leitura: o driver QSPI está desligado porque ele poderia escrever nos registradores de configuração da flash."
+			"live": "hdmi"
+		},
+		"i2s-u504": {
+			"tab": "U504 74LVC2T45",
+			"name": "Tradutor de nível do áudio do HDMI: dados (verso)",
+			"part": "TI SN74LVC2T45DCUT, VSSOP8",
+			"summary": "Leva os dados de áudio I2S do LS1021A (2,5 V) ao transmissor HDMI (3,3 V).",
+			"description": "O mesmo I2S que vai ao codec SGTL5000 (rede SAI2_TX_DATA) também segue para o SiI9022A (U39), que o embute no sinal HDMI. Como as E/S do LS1021A nesse grupo são de 2,5 V (+2V5_L1VDD), este tradutor passa o sinal a 3,3 V. O U505 faz o mesmo com os clocks.",
+			"bus": [],
+			"proto": [
+				"I2S"
+			],
+			"specs": [
+				[
+					"Lado de 2,5 V",
+					"SAI2_TX_DATA"
+				],
+				[
+					"Lado de 3,3 V",
+					"SiI9022A, pino 41"
+				]
+			],
+			"live": "hdmi"
+		},
+		"i2s-u505": {
+			"tab": "U505 74LVC2T45",
+			"name": "Tradutor de nível do áudio do HDMI: clocks (verso)",
+			"part": "TI SN74LVC2T45DCUT, VSSOP8",
+			"summary": "Leva o BCLK e o SYNC (LRCLK) do I2S do LS1021A (2,5 V) ao transmissor HDMI (3,3 V).",
+			"description": "Par do U504: traduz o SAI2_TX_BCLK e o SAI2_TX_SYNC para os pinos 44 e 45 do SiI9022A (U39), que recebe o áudio do HDMI por I2S.",
+			"bus": [],
+			"proto": [
+				"I2S"
+			],
+			"specs": [
+				[
+					"Lado de 2,5 V",
+					"SAI2_TX_BCLK, SAI2_TX_SYNC"
+				],
+				[
+					"Lado de 3,3 V",
+					"SiI9022A, pinos 44 e 45"
+				]
+			],
+			"live": "hdmi"
 		},
 		"usbhub": {
 			"tab": "U503 USB5534B",
@@ -635,6 +1339,50 @@
 					"4 a jusante"
 				]
 			]
+		},
+		"xtal-y500": {
+			"tab": "Y500 25 MHz",
+			"name": "Cristal do hub USB (verso)",
+			"part": "ECS ECS-250-8-30B-CKM, 25 MHz, 8 pF",
+			"summary": "A referência de 25 MHz do hub USB 3.0 (U503).",
+			"description": "Cristal ligado ao USB_XTAL/USB_EXTAL do USB5534B, no verso da placa.",
+			"bus": [],
+			"proto": [
+				"Cristal"
+			],
+			"specs": [
+				[
+					"Frequência",
+					"25 MHz"
+				]
+			],
+			"live": "usbhub"
+		},
+		"usb-power": {
+			"tab": "U35 MAX1558",
+			"name": "Chave de alimentação das tomadas USB",
+			"part": "Maxim (ADI) MAX1558HETB, TDFN10",
+			"summary": "Liga o VBUS de 5 V de cada tomada USB do J25 e limita a corrente.",
+			"description": "Duas chaves de alimentação com limite de corrente (ajustado pelo ISET) e aviso de falha. Quem as comanda é o hub U503: USB_PORT1_EN/USB_PORT2_EN ligam o VBUS de cada porta e USBPWR1_FLT_B/USBPWR2_FLT_B voltam ao hub quando há curto ou sobrecorrente.",
+			"bus": [],
+			"proto": [
+				"USB (VBUS)"
+			],
+			"specs": [
+				[
+					"Entrada",
+					"+5V0"
+				],
+				[
+					"Saídas",
+					"USB1_P1_PWR, USB1_P2_PWR"
+				],
+				[
+					"Controle",
+					"hub USB5534B (U503)"
+				]
+			],
+			"live": "usbhub"
 		},
 		"sdcard": {
 			"tab": "J503 SD",
@@ -677,22 +1425,111 @@
 				"JTAG/SWD (CMSIS-DAP)"
 			]
 		},
-		"repeater": {
-			"tab": "U10 PCA9515",
-			"name": "Repetidor I2C do Arduino",
-			"part": "NXP PCA9515A, TSSOP8",
-			"summary": "Leva o I2C da placa aos pinos SDA e SCL dos headers Arduino (J8 e J15).",
-			"description": "Isola a capacitância do shield e repete os sinais do I2C2 até I2C2_SDA_EXP/I2C2_SCL_EXP, nos pinos 9 e 10 do J8 e 5 e 6 do J15. O EN vem do CPLD (i2c_repeater_dis = 1, sempre ligado). Na placa, o I2C1 e o I2C2 estão unidos pelos resistores R3168/R3169, então o shield aparece no mesmo i2c-0: é assim que o FXOS8700 da FRDM-KW41Z responde em 0x1F.",
-			"bus": [
-				{
-					"bus": "I2C (i2c-0) ↔ Arduino",
-					"addr": "transparente",
-					"linux": "—"
-				}
-			],
+		"xtal-y1": {
+			"tab": "Y1 8 MHz",
+			"name": "Cristal da interface de depuração",
+			"part": "Abracon ABM3B-8.000MHZ-B2-T, 8 MHz",
+			"summary": "O clock do K22 (U19), o microcontrolador da porta USB de depuração.",
+			"description": "Cristal de 8 MHz do oscilador do Kinetis K22, de onde ele gera os 48 MHz do USB.",
+			"bus": [],
 			"proto": [
-				"I2C (até 400 kHz)"
-			]
+				"Cristal"
+			],
+			"specs": [
+				[
+					"Frequência",
+					"8 MHz"
+				]
+			],
+			"live": "opensda"
+		},
+		"jtag-u25": {
+			"tab": "U25 74LVC2T45",
+			"name": "Tradutor de nível do JTAG: TMS e TRST",
+			"part": "TI SN74LVC2T45DCUT, VSSOP8",
+			"summary": "Leva o TMS e o TRST do K22 (3,3 V) ao JTAG do LS1021A (1,8 V).",
+			"description": "Tradutor bidirecional de dois bits, de 3,3 V para 1,8 V: SDA_LSJTAG_TMS → CPU_TMS e SDA_LSJTAG_TRST_N → CPU_TRST_B. A interface de depuração (K22, U19) trabalha em 3,3 V e o JTAG do LS1021A em 1,8 V: U25, U27 e U28 traduzem os níveis, e o U26 só põe esses sinais no JTAG do LS1021A quando o CPLD habilita (SDA_SWD_EN_18), para não brigar com um depurador externo no J21.",
+			"bus": [],
+			"proto": [
+				"JTAG"
+			],
+			"specs": [
+				[
+					"Lado A (1,8 V)",
+					"CPU_TMS, CPU_TRST_B"
+				],
+				[
+					"Lado B (3,3 V)",
+					"SDA_LSJTAG_TMS, SDA_LSJTAG_TRST_N"
+				]
+			],
+			"live": "opensda"
+		},
+		"jtag-u28": {
+			"tab": "U28 74LVC2T45",
+			"name": "Tradutor de nível do JTAG: TCK e TDI",
+			"part": "TI SN74LVC2T45DCUT, VSSOP8",
+			"summary": "Leva o TCK e o TDI do K22 (3,3 V) ao JTAG do LS1021A (1,8 V).",
+			"description": "Tradutor de dois bits, de 3,3 V para 1,8 V: SDA_LSJTAG_TCK → CPU_TCK e SDA_LSJTAG_TDI → CPU_TDI. A interface de depuração (K22, U19) trabalha em 3,3 V e o JTAG do LS1021A em 1,8 V: U25, U27 e U28 traduzem os níveis, e o U26 só põe esses sinais no JTAG do LS1021A quando o CPLD habilita (SDA_SWD_EN_18), para não brigar com um depurador externo no J21.",
+			"bus": [],
+			"proto": [
+				"JTAG"
+			],
+			"specs": [
+				[
+					"Lado A (1,8 V)",
+					"CPU_TCK, CPU_TDI"
+				],
+				[
+					"Lado B (3,3 V)",
+					"SDA_LSJTAG_TCK, SDA_LSJTAG_TDI"
+				]
+			],
+			"live": "opensda"
+		},
+		"jtag-u27": {
+			"tab": "U27 74LVC2T45",
+			"name": "Tradutor de nível do JTAG: TDO",
+			"part": "TI SN74LVC2T45DCUT, VSSOP8",
+			"summary": "Devolve o TDO do LS1021A (1,8 V) ao K22 (3,3 V).",
+			"description": "Tradutor de dois bits no sentido contrário, de 1,8 V para 3,3 V: CPU_TDO_18 → SDA_LSJTAG_TDO e o GND_DETECT do header J21, com que o K22 percebe um depurador externo. A interface de depuração (K22, U19) trabalha em 3,3 V e o JTAG do LS1021A em 1,8 V: U25, U27 e U28 traduzem os níveis, e o U26 só põe esses sinais no JTAG do LS1021A quando o CPLD habilita (SDA_SWD_EN_18), para não brigar com um depurador externo no J21.",
+			"bus": [],
+			"proto": [
+				"JTAG"
+			],
+			"specs": [
+				[
+					"Lado A (1,8 V)",
+					"CPU_TDO_18, GND_DETECT"
+				],
+				[
+					"Lado B (3,3 V)",
+					"SDA_LSJTAG_TDO, SDA_GND_DETECT"
+				]
+			],
+			"live": "opensda"
+		},
+		"jtag-u26": {
+			"tab": "U26 74LVC125",
+			"name": "Buffer do JTAG",
+			"part": "NXP 74LVC125ADB, SSOP14",
+			"summary": "Põe o JTAG da interface de depuração no LS1021A e no CPLD, quando o CPLD deixa.",
+			"description": "Quatro buffers de 1,8 V com saída de três estados, todos habilitados pelo SDA_SWD_EN_18 do CPLD: CPU_TMS, CPU_TCK e CPU_TDI viram CPU_TMS_18, CPU_TCK_18 e CPU_TDI_18, que vão ao LS1021A e ao header J21; CPU_TRST_B vira CPLD_TRST_B_18, que vai ao CPLD. A interface de depuração (K22, U19) trabalha em 3,3 V e o JTAG do LS1021A em 1,8 V: U25, U27 e U28 traduzem os níveis, e o U26 só põe esses sinais no JTAG do LS1021A quando o CPLD habilita (SDA_SWD_EN_18), para não brigar com um depurador externo no J21.",
+			"bus": [],
+			"proto": [
+				"JTAG"
+			],
+			"specs": [
+				[
+					"Habilita",
+					"SDA_SWD_EN_18 (CPLD)"
+				],
+				[
+					"Saídas",
+					"LS1021A (E8, F8), J21, CPLD (H3)"
+				]
+			],
+			"live": "opensda"
 		},
 		"kw41z": {
 			"tab": "FRDM KW41Z",

@@ -45,200 +45,324 @@
 		}
 	},
 	"admin/status/ls1021aiot/chip/soc": {
-		"title": "U22 LS1021A",
-		"order": 1,
 		"action": {
 			"type": "view",
 			"path": "ls1021aiot/chip"
 		}
 	},
-	"admin/status/ls1021aiot/chip/ddr": {
-		"title": "U14–U16 DDR3L",
-		"order": 2,
+	"admin/status/ls1021aiot/chip/ddr0": {
 		"action": {
 			"type": "view",
 			"path": "ls1021aiot/chip"
 		}
 	},
-	"admin/status/ls1021aiot/chip/cpld": {
-		"title": "U33 CPLD",
-		"order": 3,
+	"admin/status/ls1021aiot/chip/ddr1": {
 		"action": {
 			"type": "view",
 			"path": "ls1021aiot/chip"
 		}
 	},
-	"admin/status/ls1021aiot/chip/switch": {
-		"title": "U31 RTL8365MB",
-		"order": 4,
+	"admin/status/ls1021aiot/chip/ddr-ecc": {
 		"action": {
 			"type": "view",
 			"path": "ls1021aiot/chip"
 		}
 	},
-	"admin/status/ls1021aiot/chip/phy": {
-		"title": "U36/U37 AR8033",
-		"order": 5,
-		"action": {
-			"type": "view",
-			"path": "ls1021aiot/chip"
-		}
-	},
-	"admin/status/ls1021aiot/chip/pmic": {
-		"title": "U13 PMIC",
-		"order": 6,
-		"action": {
-			"type": "view",
-			"path": "ls1021aiot/chip"
-		}
-	},
-	"admin/status/ls1021aiot/chip/power": {
-		"title": "Alimentação",
-		"order": 7,
-		"action": {
-			"type": "view",
-			"path": "ls1021aiot/chip"
-		}
-	},
-	"admin/status/ls1021aiot/chip/clocks": {
-		"title": "U29/U21 Clocks",
-		"order": 8,
-		"action": {
-			"type": "view",
-			"path": "ls1021aiot/chip"
-		}
-	},
-	"admin/status/ls1021aiot/chip/adt7461": {
-		"title": "U32 ADT7461",
-		"order": 9,
-		"action": {
-			"type": "view",
-			"path": "ls1021aiot/chip"
-		}
-	},
-	"admin/status/ls1021aiot/chip/lm75": {
-		"title": "U7 LM75B",
-		"order": 10,
-		"action": {
-			"type": "view",
-			"path": "ls1021aiot/chip"
-		}
-	},
-	"admin/status/ls1021aiot/chip/ina220-12v": {
-		"title": "U1 INA220 12V",
-		"order": 11,
-		"action": {
-			"type": "view",
-			"path": "ls1021aiot/chip"
-		}
-	},
-	"admin/status/ls1021aiot/chip/ina220-1v": {
-		"title": "U17 INA220 1V",
-		"order": 12,
-		"action": {
-			"type": "view",
-			"path": "ls1021aiot/chip"
-		}
-	},
-	"admin/status/ls1021aiot/chip/mma8451": {
-		"title": "U18 MMA8451Q",
-		"order": 13,
-		"action": {
-			"type": "view",
-			"path": "ls1021aiot/chip"
-		}
-	},
-	"admin/status/ls1021aiot/chip/pca9555": {
-		"title": "U2 PCA9555",
-		"order": 14,
-		"action": {
-			"type": "view",
-			"path": "ls1021aiot/chip"
-		}
-	},
-	"admin/status/ls1021aiot/chip/max1239": {
-		"title": "U6 MAX1239",
-		"order": 15,
-		"action": {
-			"type": "view",
-			"path": "ls1021aiot/chip"
-		}
-	},
-	"admin/status/ls1021aiot/chip/eeprom": {
-		"title": "U501 EEPROM",
-		"order": 16,
-		"action": {
-			"type": "view",
-			"path": "ls1021aiot/chip"
-		}
-	},
-	"admin/status/ls1021aiot/chip/audio": {
-		"title": "U5 SGTL5000",
-		"order": 17,
-		"action": {
-			"type": "view",
-			"path": "ls1021aiot/chip"
-		}
-	},
-	"admin/status/ls1021aiot/chip/hdmi": {
-		"title": "U39 SiI9022A",
-		"order": 18,
+	"admin/status/ls1021aiot/chip/ddrclk-buf": {
 		"action": {
 			"type": "view",
 			"path": "ls1021aiot/chip"
 		}
 	},
 	"admin/status/ls1021aiot/chip/qspi": {
-		"title": "U24 QSPI",
-		"order": 19,
 		"action": {
 			"type": "view",
 			"path": "ls1021aiot/chip"
 		}
 	},
-	"admin/status/ls1021aiot/chip/usbhub": {
-		"title": "U503 USB5534B",
-		"order": 20,
+	"admin/status/ls1021aiot/chip/eeprom": {
 		"action": {
 			"type": "view",
 			"path": "ls1021aiot/chip"
 		}
 	},
-	"admin/status/ls1021aiot/chip/sdcard": {
-		"title": "J503 SD",
-		"order": 21,
+	"admin/status/ls1021aiot/chip/cpld": {
 		"action": {
 			"type": "view",
 			"path": "ls1021aiot/chip"
 		}
 	},
-	"admin/status/ls1021aiot/chip/opensda": {
-		"title": "U19 OpenSDA",
-		"order": 22,
+	"admin/status/ls1021aiot/chip/osc-y3": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/clocks": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/xtal-y2": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/versaclock": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/switch": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/phy1": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/phy2": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/serdes-mux": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/power": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/poe": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/ltc4412": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/ina220-12v": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/isl8201m": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/bus-switch": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/ltc2912": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/max811": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/lt3976-5v": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/lt3976-pmic": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/pmic": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/ina220-1v": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/ldo-mpcie": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/ldo-usb": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/ldo-rtc": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/adt7461": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/lm75": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/mma8451": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/pca9555": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/max1239": {
 		"action": {
 			"type": "view",
 			"path": "ls1021aiot/chip"
 		}
 	},
 	"admin/status/ls1021aiot/chip/repeater": {
-		"title": "U10 PCA9515",
-		"order": 23,
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/audio": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/hdmi": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/hdmi-esd": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/i2s-u504": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/i2s-u505": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/usbhub": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/xtal-y500": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/usb-power": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/sdcard": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/opensda": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/xtal-y1": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/jtag-u25": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/jtag-u28": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/jtag-u27": {
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/chip"
+		}
+	},
+	"admin/status/ls1021aiot/chip/jtag-u26": {
 		"action": {
 			"type": "view",
 			"path": "ls1021aiot/chip"
 		}
 	},
 	"admin/status/ls1021aiot/chip/kw41z": {
-		"title": "FRDM KW41Z",
-		"order": 24,
 		"action": {
 			"type": "view",
 			"path": "ls1021aiot/chip"
 		}
 	},
 	"admin/status/ls1021aiot/chip/fxos8700": {
-		"title": "FRDM FXOS8700",
-		"order": 25,
 		"action": {
 			"type": "view",
 			"path": "ls1021aiot/chip"
