@@ -1,0 +1,470 @@
+#!/bin/sh
+# Live values of one device of the LS1021A-IoT board, as JSON, for the
+# component pages of luci-app-ls1021aiot.
+#
+#   ls1021aiot-chip <id>
+#
+# Only reads: sysfs, procfs and the drivers bound to each device. Nothing
+# here touches the PMIC (0x08), the clock generator (0x69), the SiI9022
+# or the QSPI flash, and nothing scans an I2C bus.
+#
+# Each page function prints lines that the end of this script turns into
+# JSON:
+#   V <label> <value> <unit>	a value
+#   T <title> <col>|<col>...	starts a table
+#   R <cell>|<cell>...		a row of the last table
+#   X <line>			a line of preformatted text
+# with the fields separated by tabs.
+
+. /usr/share/libubox/jshn.sh
+
+TAB=$(printf '\t')
+
+V() { printf 'V\t%s\t%s\t%s\n' "$1" "$2" "$3"; }
+T() { printf 'T\t%s\t%s\n' "$1" "$2"; }
+R() { printf 'R\t%s\n' "$1"; }
+X() { printf 'X\t%s\n' "$1"; }
+
+v() { cat "$1" 2>/dev/null; }
+
+hwmon() {
+	local h
+	for h in /sys/class/hwmon/hwmon*; do
+		case "$(cat $h/name 2>/dev/null)" in
+		$1*) [ -z "$2" ] || readlink $h/device | grep -q "$2" || continue
+		     echo $h; return 0 ;;
+		esac
+	done
+	return 1
+}
+
+iio() {
+	local d
+	for d in /sys/bus/iio/devices/iio:device*; do
+		[ "$(cat $d/name 2>/dev/null)" = "$1" ] && { echo $d; return 0; }
+	done
+	return 1
+}
+
+# awk arithmetic with d decimals: calc 2 "1.5 * 3"
+calc() { awk "BEGIN { printf \"%.$1f\", $2 }"; }
+
+milli() { [ -n "$1" ] && calc ${2:-1} "$1 / 1000"; }
+
+missing() { V "Estado" "não encontrado" ""; exit_json; }
+
+soc() {
+	local s=/sys/bus/soc/devices/soc0 f=/sys/devices/system/cpu/cpu0/cpufreq adt up
+
+	V "Máquina" "$(v $s/machine)" ""
+	V "Família" "$(v $s/family)" ""
+	V "SoC ID (SVR)" "$(v $s/soc_id)" ""
+	V "Revisão do silício" "$(v $s/revision)" ""
+	V "Núcleos" "$(grep -c ^processor /proc/cpuinfo)" ""
+	[ -r $f/scaling_cur_freq ] && V "Frequência" "$(($(v $f/scaling_cur_freq) / 1000))" "MHz"
+	V "BogoMIPS" "$(awk '/^BogoMIPS/ { print $3; exit }' /proc/cpuinfo)" ""
+	adt=$(hwmon adt7461) && V "Temperatura da pastilha" "$(milli $(v $adt/temp2_input))" "°C"
+	V "Carga (1, 5, 15 min)" "$(cut -d' ' -f1-3 /proc/loadavg)" ""
+	up=$(cut -d. -f1 /proc/uptime)
+	V "Ligado há" "$((up / 86400))d $((up % 86400 / 3600))h $((up % 3600 / 60))min" ""
+	V "Kernel" "$(uname -r)" ""
+
+	T "Uso por núcleo (desde o boot)" "Núcleo|Usuário|Sistema|Ocioso|IRQ"
+	awk '/^cpu[0-9]/ { t = $2 + $3 + $4 + $5 + $6 + $7 + $8
+		printf "R\t%s|%.1f %%|%.1f %%|%.1f %%|%.1f %%\n", $1,
+			100 * ($2 + $3) / t, 100 * $4 / t, 100 * $5 / t, 100 * ($7 + $8) / t }' /proc/stat
+}
+
+ddr() {
+	local edac=/sys/devices/system/edac/mc/mc0
+
+	awk '/^(MemTotal|MemFree|MemAvailable|Buffers|Cached|Shmem|Slab|CmaTotal|CmaFree):/ {
+		printf "V\t%s\t%.1f\tMiB\n", substr($1, 1, length($1) - 1), $2 / 1024 }' /proc/meminfo
+	if [ -d $edac ]; then
+		V "ECC: erros corrigidos" "$(v $edac/ce_count)" ""
+		V "ECC: erros não corrigidos" "$(v $edac/ue_count)" ""
+	else
+		V "ECC" "sem driver EDAC no kernel" ""
+	fi
+}
+
+cpld() {
+	local d l
+
+	d=$(ls -d /sys/bus/platform/devices/*.cpld 2>/dev/null | head -1)
+	[ -n "$d" ] || missing
+	V "Chaves DIP (SW2)" "$(v $d/dip_switch)" ""
+	V "Reset do shield" "$([ "$(v $d/shield_reset)" = 1 ] && echo ativo || echo inativo)" ""
+	T "LEDs" "LED|Brilho|Gatilho"
+	for l in /sys/class/leds/ls1021aiot:*; do
+		[ -e $l ] || continue
+		R "${l##*/}|$(v $l/brightness)|$(sed 's/.*\[\(.*\)\].*/\1/' $l/trigger)"
+	done
+}
+
+switch() {
+	local p n state
+
+	V "Driver" "$(basename $(readlink /sys/bus/spi/devices/spi0.1/driver) 2>/dev/null)" ""
+	V "Porta da CPU (eth2)" "$([ "$(v /sys/class/net/eth2/carrier)" = 1 ] && echo "$(v /sys/class/net/eth2/speed) Mbit/s" || echo sem link)" ""
+	dmesg | grep -m1 -o 'found an RTL[^,]*' | sed 's/^found an /Chip: /' | while read -r l; do V "Identificação" "${l#Chip: }" ""; done
+	T "Portas" "Porta|Tomada|Estado|Velocidade|Recebido|Enviado|LED verde|LED laranja"
+	for p in lan2:ETH2 lan3:ETH3 lan4:ETH4 lan5:ETH5; do
+		n=/sys/class/net/${p%:*}
+		if [ $(($(v $n/flags) & 1)) = 0 ]; then
+			state="desligada"
+		elif [ "$(v $n/carrier)" = 1 ]; then
+			state="link"
+		else
+			state="sem link"
+		fi
+		R "${p%:*}|${p#*:}|$state|$([ "$state" = link ] && echo "$(v $n/speed) Mbit/s")|$(awk -v b=$(v $n/statistics/rx_bytes) 'BEGIN { printf "%.1f MiB", b / 1048576 }')|$(awk -v b=$(v $n/statistics/tx_bytes) 'BEGIN { printf "%.1f MiB", b / 1048576 }')|$(led_mode green:lan-${p#*ETH})|$(led_mode orange:lan-${p#*ETH})"
+	done
+}
+
+# netdev LED: "hardware" when the switch drives it, else the trigger
+led_mode() {
+	local l=/sys/class/leds/$1
+	[ -e $l ] || return
+	if [ "$(v $l/offloaded)" = 1 ]; then echo hardware; else sed 's/.*\[\(.*\)\].*/\1/' $l/trigger; fi
+}
+
+phy() {
+	local d i
+
+	T "Dispositivos MDIO" "Endereço|PHY ID|Driver"
+	for d in /sys/bus/mdio_bus/devices/mdio@*; do
+		[ -e $d ] || continue
+		R "${d##*:}|$(v $d/phy_id)|$(basename "$(readlink $d/driver)" 2>/dev/null)"
+	done
+	T "Interfaces SGMII" "Interface|eTSEC|PHY|Estado|Velocidade"
+	for i in eth0 eth1; do
+		d=/sys/class/net/$i
+		[ -e $d ] || continue
+		R "$i|$(basename $(readlink $d/device))|$(basename "$(readlink $d/phydev)" 2>/dev/null)|$([ $(($(v $d/flags) & 1)) = 0 ] && echo desligada || { [ "$(v $d/carrier)" = 1 ] && echo link || echo sem link; })|$([ "$(v $d/carrier)" = 1 ] && echo "$(v $d/speed) Mbit/s")"
+	done
+}
+
+pmic() {
+	local r=$(hwmon ina2 0-0044)
+
+	V "Driver" "nenhum (sem acesso ao 0x08)" ""
+	[ -n "$r" ] && {
+		V "SW1 → VDD (medido pelo U17)" "$(milli $(v $r/in1_input) 3)" "V"
+		V "Corrente do VDD" "$(v $r/curr1_input)" "mA"
+	}
+}
+
+power() {
+	local h=$(hwmon ina2 0-0045) r=$(hwmon ina2 0-0044)
+
+	[ -n "$h" ] && {
+		V "Entrada de 12 V" "$(milli $(v $h/in1_input) 2)" "V"
+		V "Corrente de entrada" "$(v $h/curr1_input)" "mA"
+		V "Potência total" "$(calc 2 "$(v $h/power1_input) / 1000000")" "W"
+	}
+	[ -n "$r" ] && V "Núcleo de 1,0 V" "$(calc 2 "$(v $r/power1_input) / 1000000")" "W"
+}
+
+clocks() {
+	local f=/sys/devices/system/cpu/cpu0/cpufreq
+
+	V "Driver" "nenhum (sem acesso ao 0x69)" ""
+	[ -r $f/scaling_cur_freq ] && V "Clock da CPU agora" "$(($(v $f/scaling_cur_freq) / 1000))" "MHz"
+	[ -r $f/scaling_available_frequencies ] && V "Frequências da CPU" "$(v $f/scaling_available_frequencies | awk '{ for (i = 1; i <= NF; i++) printf "%s%d", (i > 1 ? ", " : ""), $i / 1000 }') MHz" ""
+}
+
+adt7461() {
+	local h
+
+	h=$(hwmon adt7461) || missing
+
+	V "Local (U32)" "$(milli $(v $h/temp1_input))" "°C"
+	V "Remoto (pastilha do LS1021A)" "$(milli $(v $h/temp2_input))" "°C"
+	V "Limite alto (remoto)" "$(milli $(v $h/temp2_max))" "°C"
+	V "THERM (liga a ventoinha)" "$(milli $(v $h/temp2_crit))" "°C"
+	V "Histerese do THERM" "$(milli $(v $h/temp2_crit_hyst))" "°C"
+	V "Ventoinha" "$([ "$(v $h/temp2_crit_alarm)" = 1 ] && echo ligada || echo desligada)" ""
+	T "Alarmes" "Alarme|Estado"
+	for a in temp1_max_alarm temp1_min_alarm temp1_crit_alarm temp2_max_alarm temp2_min_alarm temp2_crit_alarm temp2_fault; do
+		[ -r $h/$a ] && R "$a|$(v $h/$a)"
+	done
+}
+
+lm75() {
+	local h
+
+	h=$(hwmon lm75) || missing
+
+	V "Temperatura" "$(milli $(v $h/temp1_input))" "°C"
+	V "Limite (OS)" "$(milli $(v $h/temp1_max))" "°C"
+	V "Histerese" "$(milli $(v $h/temp1_max_hyst))" "°C"
+}
+
+ina220() {
+	local h
+
+	h=$(hwmon ina2 $1) || missing
+
+	V "Tensão do barramento" "$(milli $(v $h/in1_input) 3)" "V"
+	V "Tensão no shunt" "$(v $h/in0_input)" "mV"
+	V "Corrente" "$(v $h/curr1_input)" "mA"
+	V "Potência" "$(calc 3 "$(v $h/power1_input) / 1000000")" "W"
+	[ -r $h/shunt_resistor ] && V "Resistor shunt" "$(v $h/shunt_resistor)" "µΩ"
+}
+
+# accelerometer: x, y, z in m/s2 and g, and the tilt from them; the
+# second argument multiplies the scale of a driver that reports g
+accel() {
+	local d=$1 s x y z
+
+	s=$(calc 9 "$(v $d/in_accel_scale) * ${2:-1}")
+	x=$(calc 3 "$(v $d/in_accel_x_raw) * $s")
+	y=$(calc 3 "$(v $d/in_accel_y_raw) * $s")
+	z=$(calc 3 "$(v $d/in_accel_z_raw) * $s")
+	T "Aceleração" "Eixo|m/s²|g"
+	R "X|$x|$(calc 3 "$x / 9.80665")"
+	R "Y|$y|$(calc 3 "$y / 9.80665")"
+	R "Z|$z|$(calc 3 "$z / 9.80665")"
+	V "Módulo" "$(calc 2 "sqrt($x * $x + $y * $y + $z * $z)")" "m/s²"
+	V "Inclinação (pitch)" "$(calc 1 "atan2(0 - ($x), sqrt($y * $y + $z * $z)) * 57.29578")" "°"
+	V "Inclinação (roll)" "$(calc 1 "atan2($y, $z) * 57.29578")" "°"
+	[ -r $d/sampling_frequency ] && V "Taxa de amostragem" "$(v $d/sampling_frequency)" "Hz"
+	[ -r $d/in_accel_sampling_frequency ] && V "Taxa de amostragem" "$(v $d/in_accel_sampling_frequency)" "Hz"
+}
+
+mma8451() {
+	local d
+
+	d=$(iio mma8451) || missing
+	accel $d
+}
+
+fxos8700() {
+	local d s x y z h
+
+	d=$(iio fxos8700) || missing
+	# fxos8700 (Linux 6.18) gives in_accel_scale in g, not in m/s2
+	accel $d 9.80665
+	# IIO reports the magnetic field in gauss: 1 G = 100 uT
+	s=$(v $d/in_magn_scale)
+	x=$(calc 1 "$(v $d/in_magn_x_raw) * $s * 100")
+	y=$(calc 1 "$(v $d/in_magn_y_raw) * $s * 100")
+	z=$(calc 1 "$(v $d/in_magn_z_raw) * $s * 100")
+	T "Campo magnético" "Eixo|µT"
+	R "X|$x"
+	R "Y|$y"
+	R "Z|$z"
+	V "Intensidade do campo" "$(calc 1 "sqrt($x * $x + $y * $y + $z * $z)")" "µT"
+	h=$(calc 0 "(atan2($y, $x) * 57.29578 + 360) % 360")
+	V "Direção (bússola, sem calibrar)" "$h" "°"
+}
+
+pca9555() {
+	local chip i n
+
+	chip=$(gpiodetect 2>/dev/null | awk '/\[0-0023\]/ { print $1 }')
+	[ -n "$chip" ] || missing
+	V "gpiochip" "$chip" ""
+	T "Linhas" "Linha|Pino|Destino|Valor"
+	i=0
+	for n in $(gpioget -c $chip --numeric $(seq 0 15) 2>/dev/null); do
+		if [ $i -lt 8 ]; then
+			R "$i|IO0_$i|J501|$n"
+		else
+			R "$i|IO1_$((i - 8))|CPLD|$n"
+		fi
+		i=$((i + 1))
+	done
+}
+
+max1239() {
+	local d s i r
+
+	d=$(iio max1239) || missing
+	s=$(v $d/in_voltage_scale)
+	V "Escala" "$s" "mV/passo"
+	T "Canais" "Canal|Onde|Bruto|mV"
+	for i in $(seq 0 11); do
+		r=$(v $d/in_voltage${i}_raw)
+		R "CH$i|$([ $i -lt 4 ] && echo "J15 (A$i)" || echo J500)|$r|$(calc 1 "$r * $s")"
+	done
+}
+
+NVMEM=/sys/bus/nvmem/devices/0-00510/nvmem
+
+eeprom() {
+	local d n i
+
+	[ -r $NVMEM ] || missing
+	if [ "$(dd if=$NVMEM bs=1 count=4 2>/dev/null)" = NXID ]; then
+		V "Formato" "NXID" ""
+		V "Número de série" "$(dd if=$NVMEM bs=1 skip=4 count=12 2>/dev/null | tr -cd ' -~')" ""
+		V "Revisão" "$(dd if=$NVMEM bs=1 skip=16 count=5 2>/dev/null | tr -cd ' -~')" ""
+		d=$(hexdump -v -s 21 -n 6 -e '6/1 "%02x"' $NVMEM)
+		V "Fabricada em" "20${d:0:2}-${d:2:2}-${d:4:2} ${d:6:2}:${d:8:2}:${d:10:2}" ""
+		n=$((0x$(hexdump -v -s 64 -n 1 -e '1/1 "%02x"' $NVMEM)))
+		T "Endereços MAC" "#|MAC"
+		for i in $(seq 0 $((n - 1))); do
+			R "$i|$(hexdump -v -s $((66 + 6 * i)) -n 6 -e '5/1 "%02x:" 1/1 "%02x"' $NVMEM)"
+		done
+	fi
+	hexdump -C -n 128 $NVMEM | while IFS= read -r l; do X "$l"; done
+}
+
+audio() {
+	local c=/proc/asound/card0 s
+
+	[ -d $c ] || missing
+	V "Placa de som" "$(v $c/id)" ""
+	s=$(sed -n 's/^state: //p' $c/pcm0p/sub0/status 2>/dev/null)
+	V "Reprodução" "${s:-parada}" ""
+	[ -n "$s" ] && V "Formato" "$(awk '/^(format|rate|channels):/ { printf "%s ", $2 }' $c/pcm0p/sub0/hw_params)" ""
+	T "Controles do mixer" "Controle|Valor"
+	for s in Headphone PCM Lineout; do
+		R "$s|$(amixer -c 0 sget $s 2>/dev/null | awk -F'[][]' '/Front Left:/ { print $2 ($6 ? " " $6 : ""); exit }')"
+	done
+}
+
+hdmi() {
+	V "Driver" "nenhum (HDMI pausado)" ""
+	V "Leitura" "não lemos o SiI9022 (endereços 0x39, 0x3D, 0x60)" ""
+}
+
+qspi() {
+	V "Driver" "desligado (somente leitura)" ""
+	V "Leitura" "nenhuma: a flash fica intocada" ""
+}
+
+usbhub() {
+	local d
+
+	T "Dispositivos USB" "Barramento|Caminho|ID|Fabricante|Produto|Velocidade"
+	for d in /sys/bus/usb/devices/*; do
+		[ -r $d/idVendor ] || continue
+		R "$(v $d/busnum)|${d##*/}|$(v $d/idVendor):$(v $d/idProduct)|$(v $d/manufacturer)|$(v $d/product)|$(v $d/speed) Mbit/s"
+	done
+}
+
+sdcard() {
+	local c p m
+
+	c=$(ls -d /sys/class/mmc_host/mmc0/mmc0:* 2>/dev/null | head -1)
+	[ -n "$c" ] || missing
+	V "Tipo" "$(v $c/type)" ""
+	V "Nome" "$(v $c/name)" ""
+	V "Fabricante (manfid)" "$(v $c/manfid)" ""
+	V "OEM" "$(v $c/oemid)" ""
+	V "Data" "$(v $c/date)" ""
+	V "Série" "$(v $c/serial)" ""
+	V "Capacidade" "$(calc 2 "$(v /sys/block/mmcblk0/size) * 512 / 1073741824")" "GiB"
+	T "Partições" "Partição|Tamanho|Montada em|Uso"
+	for p in /sys/block/mmcblk0/mmcblk0p*; do
+		p=${p##*/}
+		m=$(awk -v d=/dev/$p '$1 == d { print $2; exit }' /proc/mounts)
+		grep -q "root=/dev/$p" /proc/cmdline && m=/
+		R "$p|$(calc 1 "$(v /sys/block/mmcblk0/$p/size) * 512 / 1048576") MiB|$m|$([ -n "$m" ] && df -h $m | awk 'NR == 2 { print $3 " de " $2 " (" $5 ")" }')"
+	done
+}
+
+opensda() {
+	V "Console do kernel" "$(tr ' ' '\n' < /proc/cmdline | sed -n 's/^console=//p')" ""
+	V "Saída do U-Boot e do kernel" "ttyS0 (DUART1)" ""
+}
+
+repeater() {
+	V "EN (CPLD i2c_repeater_dis)" "1, sempre ligado" ""
+	V "Shield visto no I2C" "$(iio fxos8700 >/dev/null && echo "sim: FXOS8700 em 0x1F" || echo "nenhum sensor da FRDM")" ""
+}
+
+kw41z() {
+	local i
+
+	i=$(hciconfig hci0 2>/dev/null)
+	[ -n "$i" ] || missing
+	V "Estado" "$(echo "$i" | grep -q RUNNING && echo ativo || echo parado)" ""
+	V "Endereço Bluetooth" "$(echo "$i" | awk '/BD Address/ { print $3 }')" ""
+	V "Barramento" "$(echo "$i" | awk '/Bus:/ { print $NF }')" ""
+	V "Versão HCI" "$(hciconfig hci0 version 2>/dev/null | sed -n 's/.*HCI Version: \([^ ]*\).*/\1/p')" ""
+	V "spartan-gatt" "$(pidof spartan-gatt >/dev/null && echo rodando || echo parado)" ""
+	V "Conexão" "$(hcitool con 2>/dev/null | awk '/LE/ { print $3; exit }')" ""
+}
+
+exit_json() {
+	exec 1>&3
+	emit
+	exit 0
+}
+
+# turn the V/T/R/X lines into JSON
+emit() {
+	local kind a b c cols tables=0
+
+	json_init
+	json_add_string id "$ID"
+	json_add_array values
+	while IFS="$TAB" read -r kind a b c; do
+		[ "$kind" = V ] || continue
+		json_add_object
+		json_add_string label "$a"
+		json_add_string value "$b"
+		json_add_string unit "$c"
+		json_close_object
+	done < $OUT
+	json_close_array
+
+	json_add_array tables
+	while IFS="$TAB" read -r kind a b; do
+		case "$kind" in
+		T)
+			[ $tables = 1 ] && { json_close_array; json_close_object; }
+			tables=1
+			json_add_object
+			json_add_string title "$a"
+			json_add_array head
+			cols="$b|"
+			while [ -n "$cols" ]; do
+				json_add_string "" "${cols%%|*}"
+				cols=${cols#*|}
+			done
+			json_close_array
+			json_add_array rows
+			;;
+		R)
+			json_add_array
+			cols="$a|"
+			while [ -n "$cols" ]; do
+				json_add_string "" "${cols%%|*}"
+				cols=${cols#*|}
+			done
+			json_close_array
+			;;
+		esac
+	done < $OUT
+	[ $tables = 1 ] && { json_close_array; json_close_object; }
+	json_close_array
+
+	json_add_array text
+	while IFS="$TAB" read -r kind a; do
+		[ "$kind" = X ] && json_add_string "" "$a"
+	done < $OUT
+	json_close_array
+
+	json_dump
+	rm -f $OUT
+}
+
+ID=$1
+OUT=/tmp/ls1021aiot-chip.$$
+exec 3>&1 1>$OUT
+
+case "$ID" in
+soc|ddr|cpld|switch|phy|pmic|power|clocks|adt7461|lm75|mma8451|fxos8700|\
+pca9555|max1239|eeprom|audio|hdmi|qspi|usbhub|sdcard|opensda|repeater|kw41z)
+	$ID ;;
+ina220-12v) ina220 0-0045 ;;
+ina220-1v) ina220 0-0044 ;;
+*) V "Erro" "componente desconhecido" "" ;;
+esac
+
+exit_json

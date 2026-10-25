@@ -7,6 +7,7 @@
 #   ubus call ls1021aiot control '{"action":"led0","value":"blink"}'
 #   ubus call ls1021aiot history '{"points":720,"seconds":86400}'
 #   ubus call ls1021aiot set_port '{"port":"lan3","on":false}'
+#   ubus call ls1021aiot chip '{"id":"adt7461"}'
 
 . /usr/share/libubox/jshn.sh
 
@@ -300,11 +301,23 @@ set_port() {
 	echo "{\"port\":\"$port\",\"on\":$([ $on = 1 ] && echo true || echo false)}"
 }
 
+# live values of one component page, from ls1021aiot-chip
+chip() {
+	local id
+
+	json_load "$1"
+	json_get_var id id
+	case "$id" in
+	*[!a-z0-9-]*|"") echo '{"error":"invalid id"}' ;;
+	*) /usr/libexec/ls1021aiot-chip "$id" ;;
+	esac
+}
+
 case "$1" in
 list)
 	echo '{"status":{},"resources":{},"history":{"points":720,"seconds":86400},' \
 	     '"set_port":{"port":"lan2","on":true},' \
-	     '"control":{"action":"led0","value":"blink"}}'
+	     '"control":{"action":"led0","value":"blink"},"chip":{"id":"soc"}}'
 	;;
 call)
 	read -r input
@@ -314,6 +327,7 @@ call)
 	control) control "$input" ;;
 	history) history "$input" ;;
 	set_port) set_port "$input" ;;
+	chip) chip "$input" ;;
 	esac
 	;;
 esac

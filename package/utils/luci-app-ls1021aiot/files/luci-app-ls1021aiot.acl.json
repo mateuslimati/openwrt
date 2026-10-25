@@ -3,7 +3,7 @@
 		"description": "Grant access to the LS1021A-IoT sensors and switch ports",
 		"read": {
 			"ubus": {
-				"ls1021aiot": [ "status", "resources", "history" ]
+				"ls1021aiot": [ "status", "resources", "history", "chip" ]
 			}
 		},
 		"write": {

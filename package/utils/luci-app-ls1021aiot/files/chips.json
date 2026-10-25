@@ -1,0 +1,744 @@
+{
+	"order": [
+		"soc",
+		"ddr",
+		"cpld",
+		"switch",
+		"phy",
+		"pmic",
+		"power",
+		"clocks",
+		"adt7461",
+		"lm75",
+		"ina220-12v",
+		"ina220-1v",
+		"mma8451",
+		"pca9555",
+		"max1239",
+		"eeprom",
+		"audio",
+		"hdmi",
+		"qspi",
+		"usbhub",
+		"sdcard",
+		"opensda",
+		"repeater",
+		"kw41z",
+		"fxos8700"
+	],
+	"chips": {
+		"soc": {
+			"tab": "U22 LS1021A",
+			"name": "Processador LS1021A",
+			"part": "NXP (Freescale) LS1021A, BGA525 19×19 mm",
+			"summary": "O processador da placa: dois Cortex-A7, controlador DDR3L e quase todos os periféricos.",
+			"description": "SoC QorIQ Layerscape com dois núcleos ARM Cortex-A7 de até 1 GHz. Tem controlador de memória DDR3L/DDR4 de 32 bits com ECC, três eTSEC (Gigabit Ethernet), SerDes compartilhado entre PCIe, SGMII e SATA, USB 3.0, QuadSPI, IFC, SAI (áudio), DSPI, I2C, UARTs e LPUARTs, CAN e o TMU (sensor de temperatura interno). Esta placa tem silício revisão 1.0 (SVR 0x87081110), que precisa dos ajustes do CCI-400 e do RCW do nosso U-Boot.",
+			"bus": [
+				{
+					"bus": "Interno",
+					"addr": "CCSR 0x01000000",
+					"linux": "/sys/bus/soc/devices/soc0"
+				}
+			],
+			"proto": [
+				"DDR3L",
+				"RGMII",
+				"SGMII",
+				"PCIe",
+				"USB 3.0",
+				"QuadSPI",
+				"IFC",
+				"I2C",
+				"SPI (DSPI)",
+				"SAI/I2S",
+				"UART"
+			],
+			"specs": [
+				[
+					"Núcleos",
+					"2× ARM Cortex-A7, NEON e VFPv4"
+				],
+				[
+					"Memória",
+					"DDR3L de 32 bits + ECC (U14, U15, U16)"
+				],
+				[
+					"Rede",
+					"eTSEC1/2 em SGMII (U36/U37), eTSEC3 em RGMII para o switch U31"
+				],
+				[
+					"Temperatura da pastilha",
+					"medida pelo diodo remoto do ADT7461 (U32)"
+				]
+			],
+			"notes": "O TMU interno responde \"Temperature check failed\" nesta revisão do silício, por isso a temperatura vem do ADT7461."
+		},
+		"ddr": {
+			"tab": "U14–U16 DDR3L",
+			"name": "Memória DDR3L",
+			"part": "3× DDR3L SDRAM 32M × 16 bits × 8 bancos (4 Gbit), FBGA96",
+			"summary": "1 GB de RAM: dois chips para os dados de 32 bits e um para o ECC.",
+			"description": "Três chips DDR3L de 1,35 V ligados ao controlador DDR do LS1021A. Dois formam o barramento de dados de 32 bits (1 GB) e o terceiro guarda os bits de ECC. A alimentação vem do PMIC: SW3 fornece GVDD (1,35 V) e SW4/REFOUT, o VTT e o VREF (0,675 V).",
+			"bus": [
+				{
+					"bus": "Controlador DDR do LS1021A",
+					"addr": "0x80000000",
+					"linux": "/proc/meminfo"
+				}
+			],
+			"proto": [
+				"DDR3L"
+			],
+			"specs": [
+				[
+					"Tensão",
+					"1,35 V (GVDD, PMIC SW3)"
+				],
+				[
+					"Capacidade",
+					"1 GB de dados + ECC"
+				]
+			]
+		},
+		"cpld": {
+			"tab": "U33 CPLD",
+			"name": "CPLD de sistema",
+			"part": "Lattice MachXO LCMXO1200C, FTBGA256",
+			"summary": "Sequência de energia, resets, LEDs, chaves DIP e o reset do shield Arduino.",
+			"description": "A lógica que liga a placa: controla a sequência de energia com o PMIC, os resets de cada periférico (PHYs, HDMI, USB, shield Arduino), lê as chaves DIP, acende LEDs e decide o caminho do I2C do Arduino (repetidor U10). O LS1021A o enxerga como memória no barramento IFC, CS0. O código-fonte original da NXP está no repositório privado ls1021a-iot-cpld. Pelo U-Boot, a versão gravada é a V2.11.",
+			"bus": [
+				{
+					"bus": "IFC (CS0)",
+					"addr": "0x7FB00000",
+					"linux": "/sys/bus/platform/devices/*.cpld"
+				}
+			],
+			"proto": [
+				"IFC (barramento paralelo de 8 bits)"
+			],
+			"specs": [
+				[
+					"Acesso",
+					"somente leituras e escritas de 8 bits"
+				],
+				[
+					"Driver",
+					"kmod-ls1021aiot-cpld (LEDs, dip_switch, shield_reset)"
+				]
+			],
+			"notes": "Regras: nunca ler 32 bits de uma vez, e preservar os bits 1 e 3 (o valor-sombra padrão é 0xF6)."
+		},
+		"switch": {
+			"tab": "U31 RTL8365MB",
+			"name": "Switch Ethernet",
+			"part": "Realtek RTL8365MB-CG (o chip se identifica como RTL8367RB, 0x6000/0x1000), LQFP128",
+			"summary": "Switch Gigabit de 4+1 portas: as tomadas ETH2 a ETH5, ligadas ao processador por RGMII.",
+			"description": "Quatro portas Gigabit com PHY integrado (as tomadas ETH2 a ETH5) e uma porta externa RGMII (a porta 6), ligada ao eTSEC3 do LS1021A. Ele é configurado pelo SPI1 do processador, no chip select 1, com o protocolo de 5 bytes da Realtek. O Linux o gerencia com o driver DSA rtl8365mb e os nossos patches 961 a 964 (interface SPI, suporte ao RTL8367RB e LEDs por hardware).",
+			"bus": [
+				{
+					"bus": "SPI1 (DSPI), CS1",
+					"addr": "spi0.1",
+					"linux": "/sys/bus/spi/devices/spi0.1"
+				},
+				{
+					"bus": "RGMII",
+					"addr": "eTSEC3 (eth2)",
+					"linux": "/sys/class/net/eth2"
+				}
+			],
+			"proto": [
+				"SPI (0x02/0x03 + endereço + dado de 16 bits)",
+				"RGMII 1 Gbit/s",
+				"MDIO interno",
+				"IEEE 802.3"
+			],
+			"specs": [
+				[
+					"Porta da CPU",
+					"porta 6, RGMII, atrasos TX 2,0 ns e RX 1,2 ns, link fixo de 1 Gbit/s"
+				],
+				[
+					"LEDs",
+					"verde = link, laranja = atividade, calculados pelo próprio switch"
+				]
+			],
+			"notes": "O pino D13 do Arduino é o SCK deste SPI: um shield que force esse pino derruba a rede."
+		},
+		"phy": {
+			"tab": "U36/U37 AR8033",
+			"name": "PHYs Gigabit SGMII",
+			"part": "2× Qualcomm Atheros AR8033, QFN48",
+			"summary": "Os PHYs das tomadas ETH0 e ETH1 (P3), ligados por SGMII ao eTSEC1 e ao eTSEC2.",
+			"description": "Cada AR8033 converte o SGMII do LS1021A para 10/100/1000BASE-T na tomada dupla P3. Os dois ficam no barramento MDIO do eTSEC1. O SerDes do SGMII2 é compartilhado com o SATA, conforme o RCW.",
+			"bus": [
+				{
+					"bus": "MDIO (eTSEC1)",
+					"addr": "0x01 e 0x03",
+					"linux": "/sys/bus/mdio_bus/devices"
+				},
+				{
+					"bus": "SGMII",
+					"addr": "eTSEC1 (eth0), eTSEC2 (eth1)",
+					"linux": "/sys/class/net/eth0"
+				}
+			],
+			"proto": [
+				"SGMII 1,25 Gbit/s",
+				"MDIO/MDC (IEEE 802.3 cláusula 22)",
+				"1000BASE-T"
+			],
+			"specs": [
+				[
+					"Clock",
+					"25 MHz (25MHz_SGMII1_CLK / 25MHz_SGMII2_CLK)"
+				],
+				[
+					"Reset",
+					"RST_SGMII1_PHY_B / RST_SGMII2_PHY_B, pelo CPLD"
+				]
+			]
+		},
+		"pmic": {
+			"tab": "U13 PMIC",
+			"name": "PMIC",
+			"part": "NXP MC34VR500V1ES, QFN56 8×8 mm",
+			"summary": "Gera quase todas as tensões do LS1021A e da DDR3L a partir dos 3,3 V.",
+			"description": "Quatro conversores buck e cinco LDOs, com sequência de partida programada de fábrica para o LS1021A. SW1 fornece o VDD do núcleo (1,0 V), SW2 o VDDC (1,0 V), SW3 o GVDD da DDR3L (1,35 V), SW4 e REFOUT o VTT e o VREF (0,675 V). O LDO1 alimenta o HDMI (1,2 V), o LDO3 a Ethernet (2,5 V) e o LDO2/LDO5, o OVDD (1,8 V). O CPLD dispara a sequência e o PMIC é alimentado pelo LT3976 (U12).",
+			"bus": [
+				{
+					"bus": "I2C (i2c-0)",
+					"addr": "0x08",
+					"linux": "sem driver"
+				}
+			],
+			"proto": [
+				"I2C"
+			],
+			"specs": [
+				[
+					"SW1",
+					"1,0 V, 4,5 A de pico: VDD do LS1021A (monitorado pelo U17)"
+				],
+				[
+					"SW3",
+					"1,35 V, 2,5 A de pico: GVDD da DDR3L"
+				],
+				[
+					"LDO1",
+					"1,2 V, 250 mA: HDMI"
+				]
+			],
+			"notes": "Nunca escrevemos no endereço 0x08: um registrador errado corta a alimentação do processador."
+		},
+		"power": {
+			"tab": "Alimentação",
+			"name": "Entrada e conversores de alimentação",
+			"part": "U3 Intersil ISL8201MIRZ, U11/U12 Linear LT3976, U38 módulo PoE",
+			"summary": "A entrada de 12 V e os conversores de 3,3 V e 5 V da placa.",
+			"description": "A placa recebe 12 V pelo conector J1 ou pelo PoE: o módulo U38 converte os 36–58 V em 12 V, até 12,9 W. A partir dos 12 V, o ISL8201M (U3, 10 A) gera os 3,3 V da placa e do CPLD, um LT3976 (U11) gera os 5 V do USB, do SATA e dos LDOs U30/U502, e outro LT3976 (U12) gera os 3,3 V do PMIC. O INA220 U1 mede a entrada de 12 V.",
+			"bus": [
+				{
+					"bus": "I2C (i2c-0)",
+					"addr": "0x45 (INA220 U1)",
+					"linux": "hwmon ina220"
+				}
+			],
+			"proto": [
+				"Analógico (conversores DC-DC)"
+			],
+			"specs": [
+				[
+					"U3 ISL8201M",
+					"+3V3 da placa"
+				],
+				[
+					"U11 LT3976",
+					"+5V0: USB, SATA, U30, U502"
+				],
+				[
+					"U12 LT3976",
+					"+3V3_PMIC"
+				],
+				[
+					"U38",
+					"PoE de 36–58 V para 12 V"
+				]
+			]
+		},
+		"clocks": {
+			"tab": "U29/U21 Clocks",
+			"name": "Geradores de clock",
+			"part": "IDT 6V49205BNLGI (U29) e IDT 5P49V5901A031 VersaClock 5 (U21)",
+			"summary": "Geram o SYSCLK, o DDRCLK, os clocks do SerDes e o de 125 MHz do RGMII.",
+			"description": "O U29 (6V49205B) gera o DIFF_SYSCLK de 100 MHz, o DDRCLK, os dois SERDES_REF_CLK de 100 MHz e o EC3_GTX_CLK de 125 MHz do RGMII do switch. O U21 (VersaClock 5) é a fonte principal do SYSCLK, escolhida por SW2[6:7]: 100 MHz por padrão, 99 MHz (HDMI) ou 96 MHz (Profibus).",
+			"bus": [
+				{
+					"bus": "I2C (i2c-0)",
+					"addr": "0x69 (U29); U21 isolado do barramento",
+					"linux": "sem driver"
+				}
+			],
+			"proto": [
+				"I2C",
+				"HCSL/LVDS (clocks diferenciais)"
+			],
+			"specs": [
+				[
+					"SYSCLK",
+					"100 MHz (U21, SW2[6:7] = 00)"
+				],
+				[
+					"DDRCLK",
+					"100 MHz"
+				],
+				[
+					"EC3_GTX_CLK",
+					"125 MHz"
+				]
+			],
+			"notes": "Nunca escrevemos no endereço 0x69: mudar um clock trava a placa."
+		},
+		"adt7461": {
+			"tab": "U32 ADT7461",
+			"name": "Monitor de temperatura duplo",
+			"part": "onsemi/ADI ADT7461A, MSOP8",
+			"summary": "Mede a própria temperatura e a da pastilha do LS1021A, por um diodo remoto.",
+			"description": "Mede a própria temperatura e a de um diodo térmico dentro do LS1021A, ligado aos pinos D+ e D-. Os limites THERM ligam a ventoinha: o serviço ls1021aiot-fan liga a 75 °C. Tem ALERT do SMBus, que responde no endereço 0x0C quando ativado.",
+			"bus": [
+				{
+					"bus": "I2C (i2c-0)",
+					"addr": "0x4C",
+					"linux": "hwmon adt7461"
+				}
+			],
+			"proto": [
+				"I2C/SMBus",
+				"SMBus Alert"
+			],
+			"specs": [
+				[
+					"Faixa",
+					"−55 a +150 °C (modo estendido)"
+				],
+				[
+					"Precisão",
+					"±1 °C"
+				]
+			]
+		},
+		"lm75": {
+			"tab": "U7 LM75B",
+			"name": "Sensor de temperatura do gabinete",
+			"part": "NXP LM75BD, SO8",
+			"summary": "Mede a temperatura do gabinete, no canto da placa perto do J500.",
+			"description": "Sensor digital de 11 bits (0,125 °C por passo), com saída OS de termostato. O manual da placa o lista como o sensor do gabinete (Case).",
+			"bus": [
+				{
+					"bus": "I2C (i2c-0)",
+					"addr": "0x48",
+					"linux": "hwmon lm75"
+				}
+			],
+			"proto": [
+				"I2C"
+			],
+			"specs": [
+				[
+					"Resolução",
+					"0,125 °C"
+				],
+				[
+					"Faixa",
+					"−55 a +125 °C"
+				]
+			]
+		},
+		"ina220-12v": {
+			"tab": "U1 INA220 12V",
+			"name": "Monitor de corrente da entrada de 12 V",
+			"part": "TI INA220AIDGST, MSOP10",
+			"summary": "Mede a tensão, a corrente e a potência da entrada de 12 V.",
+			"description": "Mede a queda de tensão num resistor shunt para calcular a corrente, e a tensão do barramento. A potência sai do produto das duas. Mostra o consumo total da placa, incluindo a FRDM e o que estiver ligado no USB.",
+			"bus": [
+				{
+					"bus": "I2C (i2c-0)",
+					"addr": "0x45",
+					"linux": "hwmon ina220"
+				}
+			],
+			"proto": [
+				"I2C/SMBus"
+			],
+			"specs": [
+				[
+					"Barramento",
+					"0–26 V"
+				],
+				[
+					"ADC",
+					"12 bits"
+				]
+			]
+		},
+		"ina220-1v": {
+			"tab": "U17 INA220 1V",
+			"name": "Monitor de corrente do núcleo de 1,0 V",
+			"part": "TI INA220AIDGST, MSOP10",
+			"summary": "Mede o VDD do LS1021A, que sai do SW1 do PMIC.",
+			"description": "O mesmo INA220, agora no trilho de 1,0 V do núcleo do processador. A corrente acompanha a carga da CPU: dá para ver o processador trabalhando.",
+			"bus": [
+				{
+					"bus": "I2C (i2c-0)",
+					"addr": "0x44",
+					"linux": "hwmon ina220"
+				}
+			],
+			"proto": [
+				"I2C/SMBus"
+			],
+			"specs": [
+				[
+					"Trilho",
+					"+1V0_VDDCORE (PMIC SW1)"
+				]
+			]
+		},
+		"mma8451": {
+			"tab": "U18 MMA8451Q",
+			"name": "Acelerômetro de 3 eixos",
+			"part": "NXP MMA8451Q, QFN16 3×3 mm",
+			"summary": "Mede a aceleração em X, Y e Z: com a placa parada, mostra a gravidade e a inclinação.",
+			"description": "Acelerômetro capacitivo de 14 bits, com faixas de ±2, ±4 e ±8 g. Com a placa parada, a aceleração medida é a gravidade (≈ 9,8 m/s²), e dela saem os ângulos de inclinação. Detecta toque, queda livre e orientação, mas o driver só usa as leituras.",
+			"bus": [
+				{
+					"bus": "I2C (i2c-0)",
+					"addr": "0x1C",
+					"linux": "iio mma8451"
+				}
+			],
+			"proto": [
+				"I2C"
+			],
+			"specs": [
+				[
+					"Resolução",
+					"14 bits"
+				],
+				[
+					"Faixa",
+					"±2/±4/±8 g"
+				]
+			]
+		},
+		"pca9555": {
+			"tab": "U2 PCA9555",
+			"name": "Expansor de GPIO de 16 bits",
+			"part": "NXP PCA9555BS, QFN24",
+			"summary": "16 linhas pelo I2C: IO0 vai ao header J501 e IO1 ao CPLD.",
+			"description": "Duas portas de 8 bits, com cada linha configurável como entrada ou saída e interrupção quando uma entrada muda. Na placa, IO0_0–IO0_7 vão ao header J501, e IO1_0–IO1_7 e a interrupção (GPIO_EXPAND_INT_B) vão ao CPLD (U33). Todas estão como entradas, com pull-up, e por isso leem 1.",
+			"bus": [
+				{
+					"bus": "I2C (i2c-0)",
+					"addr": "0x23",
+					"linux": "gpiochip pca9555"
+				}
+			],
+			"proto": [
+				"I2C"
+			],
+			"specs": [
+				[
+					"IO0_0–IO0_7",
+					"J501 pinos 3, 5, 9, 11, 13, 17, 19, 18"
+				],
+				[
+					"IO1_0–IO1_7",
+					"CPLD (U33)"
+				],
+				[
+					"INT",
+					"CPLD (U33.N3)"
+				]
+			],
+			"notes": "A página só lê as linhas, sem mudar a direção de nenhuma."
+		},
+		"max1239": {
+			"tab": "U6 MAX1239",
+			"name": "ADC de 12 canais",
+			"part": "Maxim MAX1239, QSOP16",
+			"summary": "ADC de 12 bits e 12 entradas: A0–A3 do Arduino (J15) e oito no J500.",
+			"description": "Conversor de aproximações sucessivas de 12 bits, com referência interna de 2,048 V (0,5 mV por passo). Os canais 0 a 3 vão às entradas analógicas do Arduino (J15, A0–A3) e os canais 4 a 11 ao header J500. Uma entrada sem nada ligado flutua, e a que passar da referência satura em 2047,5 mV.",
+			"bus": [
+				{
+					"bus": "I2C (i2c-0)",
+					"addr": "0x35",
+					"linux": "iio max1239"
+				}
+			],
+			"proto": [
+				"I2C"
+			],
+			"specs": [
+				[
+					"Resolução",
+					"12 bits, 0,5 mV/passo"
+				],
+				[
+					"Referência",
+					"2,048 V interna"
+				],
+				[
+					"CH0–CH3",
+					"J15.1–J15.4 (Arduino A0–A3)"
+				],
+				[
+					"CH4–CH11",
+					"J500"
+				]
+			]
+		},
+		"eeprom": {
+			"tab": "U501 EEPROM",
+			"name": "EEPROM da placa (verso)",
+			"part": "24C32/AT24C64-compatível, TSSOP8, endereçamento de 16 bits",
+			"summary": "Guarda a identidade da placa: número de série, revisão, data e os endereços MAC.",
+			"description": "A NXP grava na fábrica um registro NXID: \"NXID\", número de série, revisão, data de fabricação (BCD) e os MACs dos eTSEC, com CRC. O U-Boot lê os MACs dali. Fica no verso da placa, embaixo da área do mini PCIe P1.",
+			"bus": [
+				{
+					"bus": "I2C (i2c-0)",
+					"addr": "0x51",
+					"linux": "nvmem 0-00510 (read-only)"
+				}
+			],
+			"proto": [
+				"I2C"
+			],
+			"specs": [
+				[
+					"Formato",
+					"NXID v1 (U-Boot board/freescale/common/sys_eeprom.c)"
+				]
+			],
+			"notes": "O Linux só lê: o nó do DTS tem read-only."
+		},
+		"audio": {
+			"tab": "U5 SGTL5000",
+			"name": "Codec de áudio",
+			"part": "NXP SGTL5000, QFN32",
+			"summary": "DAC e ADC estéreo: o som de boot e os alertas do Bluetooth saem por ele.",
+			"description": "Codec estéreo de baixo consumo, com amplificador de fone, saída de linha, microfone e entrada de linha. Recebe o áudio digital do SAI1 do LS1021A, por I2S, e é configurado pelo I2C. O VDDD é de 1,8 V, fornecido pelo regulador da placa (o nosso patch 954 corrigiu o DTS).",
+			"bus": [
+				{
+					"bus": "I2C (i2c-0)",
+					"addr": "0x2A",
+					"linux": "ASoC sgtl5000, card 0"
+				},
+				{
+					"bus": "SAI1 (I2S)",
+					"addr": "2B50000",
+					"linux": "simple-audio-card"
+				}
+			],
+			"proto": [
+				"I2C",
+				"I2S"
+			],
+			"specs": [
+				[
+					"Saídas",
+					"fone e linha"
+				],
+				[
+					"Entradas",
+					"microfone e linha"
+				]
+			]
+		},
+		"hdmi": {
+			"tab": "U39 SiI9022A",
+			"name": "Transmissor HDMI",
+			"part": "Silicon Image (Lattice) SiI9022A, QFN72",
+			"summary": "Converte o vídeo RGB do LS1021A (DCU) em HDMI no conector J27.",
+			"description": "Recebe o vídeo paralelo do DCU (2D-ACE) do LS1021A e o transmite em HDMI, com áudio. O I2C da porta DDC do monitor passa por ele: é o i2c-1 do Linux, que nunca deve ser varrido. O suporte a HDMI está pausado neste projeto.",
+			"bus": [
+				{
+					"bus": "I2C (i2c-0)",
+					"addr": "0x39 (TPI), 0x3D (interno), 0x60 (CPI)",
+					"linux": "sem driver"
+				}
+			],
+			"proto": [
+				"I2C",
+				"RGB paralelo",
+				"TMDS (HDMI 1.3)"
+			],
+			"specs": [
+				[
+					"Pixel clock",
+					"até 165 MHz"
+				],
+				[
+					"Proteção ESD",
+					"U40"
+				]
+			],
+			"notes": "Não escrevemos nos endereços 0x39, 0x3D e 0x60, nem varremos o i2c-1: isso já travou o barramento."
+		},
+		"qspi": {
+			"tab": "U24 QSPI",
+			"name": "Flash NOR QuadSPI",
+			"part": "Cypress/Spansion S70FL01GS (1 Gbit, 128 MB), SOIC16",
+			"summary": "Flash de boot alternativa: com ela a placa dá boot sem o cartão SD.",
+			"description": "Flash NOR SPI de 1 Gbit (duas pastilhas de 512 Mbit) no controlador QuadSPI do LS1021A. Pode guardar RCW, U-Boot e sistema, para dar boot sem o cartão SD. Aqui ela fica intocada.",
+			"bus": [
+				{
+					"bus": "QuadSPI",
+					"addr": "0x40000000",
+					"linux": "sem driver (desligado de propósito)"
+				}
+			],
+			"proto": [
+				"SPI (1/2/4 bits)"
+			],
+			"specs": [
+				[
+					"Capacidade",
+					"128 MB"
+				],
+				[
+					"Velocidade",
+					"até 133 MHz"
+				]
+			],
+			"notes": "Somente leitura: o driver QSPI está desligado porque ele poderia escrever nos registradores de configuração da flash."
+		},
+		"usbhub": {
+			"tab": "U503 USB5534B",
+			"name": "Hub USB 3.0 (verso)",
+			"part": "Microchip (SMSC) USB5534B, QFN64",
+			"summary": "Hub de 4 portas: as duas tomadas USB 3.0 do J25 e o USB dos mini PCIe P1 e P2.",
+			"description": "Hub SuperSpeed com dois hubs internos, USB5534B (5 Gbit/s) e USB2134B (USB 2.0). É alimentado por 1,25 V do MAX8869 (U502) e fica no verso da placa.",
+			"bus": [
+				{
+					"bus": "USB 3.0 do LS1021A",
+					"addr": "usb1/usb2",
+					"linux": "/sys/bus/usb/devices"
+				}
+			],
+			"proto": [
+				"USB 3.0 (5 Gbit/s)",
+				"USB 2.0 (480 Mbit/s)"
+			],
+			"specs": [
+				[
+					"Portas",
+					"4 a jusante"
+				]
+			]
+		},
+		"sdcard": {
+			"tab": "J503 SD",
+			"name": "Slot do cartão SD (verso)",
+			"part": "Soquete microSD/SD, ligado ao eSDHC",
+			"summary": "O cartão de onde a placa dá boot: U-Boot, FIT e raiz ext4.",
+			"description": "O controlador eSDHC do LS1021A lê o cartão em 4 bits. O RCW manda dar boot dele: a partir do setor 8 ficam o PBL, o SPL e o U-Boot; a partição 1 (FAT) tem o openwrt-main.itb; a partição 2 (ext4) é a raiz do sistema.",
+			"bus": [
+				{
+					"bus": "eSDHC",
+					"addr": "0x01560000",
+					"linux": "mmc0 / mmcblk0"
+				}
+			],
+			"proto": [
+				"SD (4 bits)"
+			]
+		},
+		"opensda": {
+			"tab": "U19 OpenSDA",
+			"name": "Interface de depuração (mbed CMSIS-DAP)",
+			"part": "NXP Kinetis MK22FX512 (Cortex-M4), LQFP64",
+			"summary": "A porta USB de depuração: console serial, JTAG (CMSIS-DAP) e o reset remoto.",
+			"description": "Um Kinetis K22 com firmware mbed CMSIS-DAP. Pela USB, ele aparece no notebook como porta serial (o console do LS1021A, ttyS0 a 115200), como depurador CMSIS-DAP (JTAG do LS1021A com SW2.8 ligada) e como HID, que usamos para pulsar o nRESET (lab/tools/dapreset.py).",
+			"bus": [
+				{
+					"bus": "UART (DUART1)",
+					"addr": "ttyS0",
+					"linux": "console"
+				},
+				{
+					"bus": "JTAG do LS1021A",
+					"addr": "SW2.8",
+					"linux": "—"
+				}
+			],
+			"proto": [
+				"USB",
+				"UART",
+				"JTAG/SWD (CMSIS-DAP)"
+			]
+		},
+		"repeater": {
+			"tab": "U10 PCA9515",
+			"name": "Repetidor I2C do Arduino",
+			"part": "NXP PCA9515A, TSSOP8",
+			"summary": "Leva o I2C da placa aos pinos SDA e SCL dos headers Arduino (J8 e J15).",
+			"description": "Isola a capacitância do shield e repete os sinais do I2C2 até I2C2_SDA_EXP/I2C2_SCL_EXP, nos pinos 9 e 10 do J8 e 5 e 6 do J15. O EN vem do CPLD (i2c_repeater_dis = 1, sempre ligado). Na placa, o I2C1 e o I2C2 estão unidos pelos resistores R3168/R3169, então o shield aparece no mesmo i2c-0: é assim que o FXOS8700 da FRDM-KW41Z responde em 0x1F.",
+			"bus": [
+				{
+					"bus": "I2C (i2c-0) ↔ Arduino",
+					"addr": "transparente",
+					"linux": "—"
+				}
+			],
+			"proto": [
+				"I2C (até 400 kHz)"
+			]
+		},
+		"kw41z": {
+			"tab": "FRDM KW41Z",
+			"name": "Bluetooth LE (FRDM-KW41Z)",
+			"part": "NXP MKW41Z512 (Cortex-M0+, rádio 2,4 GHz) na FRDM-KW41Z",
+			"summary": "O rádio Bluetooth LE do spartan-gatt, ligado ao LS1021A por UART (HCI).",
+			"description": "A FRDM-KW41Z fica encaixada nos headers Arduino. O KW41Z roda o firmware hci_black_box, compilado do SDK 2.2.3, e conversa com o BlueZ pela UART2 do LS1021A (ttyS1, 115200, H4). O CPLD comanda o pino RESET do Arduino (J16.5), que a página Visão geral pode pulsar (shield_reset). Na FRDM também estão o FXOS8700CQ, um LED RGB (cuidado: o azul é o D13 = SCK do switch) e uma flash AT45DB041E no SPI0 do KW41Z.",
+			"bus": [
+				{
+					"bus": "UART2 (Arduino D0/D1)",
+					"addr": "ttyS1",
+					"linux": "hci0 (hci_uart)"
+				}
+			],
+			"proto": [
+				"Bluetooth LE 4.2",
+				"HCI H4 sobre UART"
+			]
+		},
+		"fxos8700": {
+			"tab": "FRDM FXOS8700",
+			"name": "Acelerômetro e magnetômetro (FRDM-KW41Z)",
+			"part": "NXP FXOS8700CQ, QFN16 3×3 mm",
+			"summary": "Acelerômetro de 14 bits e magnetômetro de 16 bits: a bússola da placa.",
+			"description": "Sensor de 6 eixos da FRDM-KW41Z: aceleração (±2/±4/±8 g, 14 bits) e campo magnético (±1200 µT, 0,1 µT). Ele fica no I2C1 do KW41Z (PTC2/PTC3), que vai aos pinos SDA/SCL do Arduino, e por isso chega ao i2c-0 do LS1021A pelo repetidor U10. Com o campo magnético horizontal sai a direção, como numa bússola (sem calibração de ferro duro, é aproximada).",
+			"bus": [
+				{
+					"bus": "I2C (i2c-0) via U10",
+					"addr": "0x1F",
+					"linux": "iio fxos8700"
+				}
+			],
+			"proto": [
+				"I2C"
+			],
+			"specs": [
+				[
+					"WHO_AM_I",
+					"0xC7"
+				],
+				[
+					"Magnetômetro",
+					"±1200 µT, 0,1 µT"
+				]
+			],
+			"notes": "Sem a FRDM encaixada, o driver não encontra o sensor e a página mostra \"não encontrado\". O driver fxos8700 do Linux 6.18 informa a escala da aceleração em g, e não em m/s² como a ABI do IIO pede; esta página faz a conversão."
+		}
+	}
+}
