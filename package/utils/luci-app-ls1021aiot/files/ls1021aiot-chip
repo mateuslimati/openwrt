@@ -277,6 +277,7 @@ pca9555() {
 	[ -x /usr/libexec/ls1021aiot-io ] && /usr/libexec/ls1021aiot-io get >/dev/null 2>&1 || missing
 	T "Linhas" "Linha|Pino|Destino|Modo|Valor"
 	/usr/libexec/ls1021aiot-io get | while read -r i dir val; do
+		[ $i -lt 16 ] || continue
 		dir=$([ $dir = out ] && echo saída || echo entrada)
 		if [ $i -lt 8 ]; then
 			R "$i|IO0_$i|J501|$dir|$val"

@@ -1,14 +1,14 @@
 {
 	"luci-app-ls1021aiot": {
-		"description": "Grant access to the LS1021A-IoT sensors, switch ports and I/O",
+		"description": "Grant access to the LS1021A-IoT sensors, switch ports, I/O and CPLD",
 		"read": {
 			"ubus": {
-				"ls1021aiot": [ "status", "resources", "history", "chip", "io", "adc" ]
+				"ls1021aiot": [ "status", "resources", "history", "chip", "io", "adc", "cpld" ]
 			}
 		},
 		"write": {
 			"ubus": {
-				"ls1021aiot": [ "set_port", "control", "set_io" ]
+				"ls1021aiot": [ "set_port", "control", "set_io", "cpld_set", "loopback" ]
 			}
 		}
 	}

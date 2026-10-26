@@ -11,6 +11,11 @@
 #   ubus call ls1021aiot io
 #   ubus call ls1021aiot set_io '{"line":0,"dir":"out","value":1}'
 #   ubus call ls1021aiot adc
+#   ubus call ls1021aiot loopback
+#   ubus call ls1021aiot cpld
+#   ubus call ls1021aiot cpld_set '{"what":"reset","name":"usb_hub","value":"pulse"}'
+#   ubus call ls1021aiot cpld_set '{"what":"ctrl","name":"fan_force","value":"1"}'
+#   ubus call ls1021aiot cpld_set '{"what":"action","value":"cold"}'
 
 . /usr/share/libubox/jshn.sh
 
@@ -168,7 +173,7 @@ resources() {
 	# PCA9555: the level of its 16 lines, without changing them
 	json_add_array gpio
 	for l in $(/usr/libexec/ls1021aiot-io get 2>/dev/null | tr ' ' :); do
-		json_add_int "" "${l##*:}"
+		[ ${l%%:*} -lt 16 ] && json_add_int "" "${l##*:}"
 	done
 	json_close_array
 
@@ -303,7 +308,7 @@ set_port() {
 	echo "{\"port\":\"$port\",\"on\":$([ $on = 1 ] && echo true || echo false)}"
 }
 
-# the 16 lines of the PCA9555: direction and level
+# the 16 lines of the PCA9555 and the 28 of the CPLD: direction and level
 io() {
 	local l
 
@@ -339,6 +344,29 @@ set_io() {
 	fi
 }
 
+# the wires between IO1 of the PCA9555 and GPIO_EXPAND8-15 of the CPLD:
+# for each direction and bit, the checks done and those that failed
+loopback() {
+	/usr/libexec/ls1021aiot-io loopback 2>/dev/null | awk '
+		{ split($3, f, ":"); k = $1 " " f[1]; n[k]++; if (f[2] != f[3]) bad[k]++; total++; if (f[2] != f[3]) nbad++ }
+		END {
+			if (!total) { print "{\"ok\":false}"; exit }
+			printf "{\"ok\":true,\"checks\":%d,\"failed\":%d,\"bits\":[", total, nbad
+			sep = ""
+			for (d = 0; d < 2; d++) {
+				dir = d ? "pca>cpld" : "cpld>pca"
+				for (b = 0; b < 8; b++) {
+					k = dir " " b
+					if (!(k in n)) continue
+					printf "%s{\"dir\":\"%s\",\"bit\":%d,\"checks\":%d,\"failed\":%d}", sep, dir, b, n[k], bad[k] + 0
+					sep = ","
+				}
+			}
+			print "]}"
+		}'
+	logger -t ls1021aiot "LuCI: PCA9555-CPLD loopback test"
+}
+
 # MAX1239: the 12 inputs, raw (0-4095) and the mV of one step
 adc() {
 	local d i
@@ -353,6 +381,109 @@ adc() {
 		json_close_array
 	}
 	json_dump
+}
+
+CPLD_RESETS="switch sgmii1_phy sgmii2_phy usb_hub arduino_shield hdmi pcie1 pcie2"
+CPLD_CTRLS="fan_force arduino_i2c_off qspi_reset"
+
+cpld_dir() {
+	ls -d /sys/bus/platform/devices/*.cpld 2>/dev/null | head -n 1
+}
+
+# CPLD 3.0: version, last reset, status lines, chip resets, controls and
+# watchdog; with an older image only the version reads
+cpld() {
+	local d n v r
+
+	d=$(cpld_dir)
+	json_init
+	if [ -z "$d" ] || [ ! -f $d/regs ]; then
+		json_add_boolean v3 0
+		json_add_string dip_switch "$(cat $d/dip_switch 2>/dev/null)"
+		json_dump
+		return
+	fi
+	json_add_boolean v3 1
+	json_add_string version "$(cat $d/version)"
+	json_add_string dip_switch "$(cat $d/dip_switch)"
+	r=$(cat $d/reset_cause)
+	json_add_object cause
+	json_add_string name "${r% *}"
+	json_add_string raw "${r#* }"
+	json_close_object
+
+	json_add_object status
+	for n in $(tr ' ' : < $d/status); do
+		json_add_int ${n%:*} ${n#*:}
+	done
+	json_close_object
+
+	json_add_object resets
+	for n in $CPLD_RESETS; do
+		json_add_int $n "$(cat $d/reset/$n)"
+	done
+	json_close_object
+
+	json_add_object ctrl
+	for n in $CPLD_CTRLS; do
+		json_add_int $n "$(cat $d/$n)"
+	done
+	json_close_object
+
+	# watchdog: 0x0C control, 0x0D timeout, 0x0E seconds left
+	r=$(sed -n 2p $d/regs)
+	set -- $r
+	json_add_object watchdog
+	json_add_boolean enabled $((0x$5 & 1))
+	json_add_boolean cold $(((0x$5 >> 1) & 1))
+	json_add_int timeout $((0x$6))
+	json_add_int left $((0x$7))
+	json_close_object
+
+	json_add_string regs "$(cat $d/regs)"
+	json_dump
+}
+
+cpld_set() {
+	local what name value d ok=0
+
+	json_load "$1"
+	json_get_var what what
+	json_get_var name name
+	json_get_var value value
+	d=$(cpld_dir)
+	[ -n "$d" ] && [ -f $d/regs ] || { echo '{"ok":false}'; return; }
+
+	case "$what" in
+	reset)
+		case " $CPLD_RESETS " in *" $name "*)
+			case "$value" in
+			pulse|0|1) echo $value > $d/reset/$name && ok=1 ;;
+			esac ;;
+		esac ;;
+	ctrl)
+		case " $CPLD_CTRLS " in *" $name "*)
+			case "$value" in
+			0|1) echo $value > $d/$name && ok=1 ;;
+			esac ;;
+		esac ;;
+	action)
+		case "$value" in
+		cold|warm|full)
+			logger -t ls1021aiot "LuCI: CPLD $value reset"
+			sync
+			# answer first; the board goes down a moment later
+			( sleep 1; echo $value > $d/action ) </dev/null >/dev/null 2>&1 &
+			ok=1 ;;
+		esac ;;
+	esac
+
+	if [ $ok = 1 ]; then
+		[ "$what" = action ] || logger -t ls1021aiot "LuCI: CPLD $what $name $value"
+		echo '{"ok":true}'
+	else
+		echo '{"ok":false}'
+	fi
 }
 
 # live values of one component page, from ls1021aiot-chip
@@ -372,7 +503,8 @@ list)
 	echo '{"status":{},"resources":{},"history":{"points":720,"seconds":86400},' \
 	     '"set_port":{"port":"lan2","on":true},' \
 	     '"control":{"action":"led0","value":"blink"},"chip":{"id":"soc"},' \
-	     '"io":{},"set_io":{"line":0,"dir":"in","value":0},"adc":{}}'
+	     '"io":{},"set_io":{"line":0,"dir":"in","value":0},"adc":{},' \
+	     '"loopback":{},"cpld":{},"cpld_set":{"what":"reset","name":"usb_hub","value":"pulse"}}'
 	;;
 call)
 	read -r input
@@ -386,6 +518,9 @@ call)
 	io) io ;;
 	set_io) set_io "$input" ;;
 	adc) adc ;;
+	cpld) cpld ;;
+	loopback) loopback ;;
+	cpld_set) cpld_set "$input" ;;
 	esac
 	;;
 esac

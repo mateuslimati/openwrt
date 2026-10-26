@@ -379,8 +379,8 @@
 			"tab": "U33 CPLD",
 			"name": "CPLD de sistema",
 			"part": "Lattice MachXO LCMXO1200C, FTBGA256",
-			"summary": "Sequência de energia, resets, LEDs, chaves DIP e o reset do shield Arduino.",
-			"description": "A lógica que liga a placa: controla a sequência de energia com o PMIC, os resets de cada periférico (PHYs, HDMI, USB, shield Arduino), lê as chaves DIP, acende LEDs e decide o caminho do I2C do Arduino (repetidor U10). O LS1021A o enxerga como memória no barramento IFC, CS0. O código-fonte original da NXP está no repositório privado ls1021a-iot-cpld. Pelo U-Boot, a versão gravada é a V2.11.",
+			"summary": "Sequência de energia, resets de cada chip, watchdog, chaves DIP, LED0 e 28 E/S.",
+			"description": "A lógica que liga a placa: controla a sequência de energia com o PMIC, os resets de cada periférico (switch, PHYs, hub USB, shield Arduino, HDMI e slots mini PCIe), lê as chaves DIP, acende o LED0 e decide o caminho do I2C do Arduino (repetidor U10). O LS1021A o enxerga como memória no barramento IFC, CS0. A partir da imagem 3.0 ela tem registradores endereçados (com o CS0 em modo NOR ADM \"AVD\"): reset de cada chip em runtime, reset a frio, a quente e total, a causa do último reset, um watchdog em segundos e 28 E/S (J501, Arduino D2 a D7, IO1 do PCA9555 e os pontos de teste TP9 a TP16). O código-fonte original da NXP está no repositório privado ls1021a-iot-cpld. Pelo U-Boot, a versão gravada é a V3.0.",
 			"bus": [
 				{
 					"bus": "IFC (CS0)",
@@ -397,11 +397,23 @@
 					"somente leituras e escritas de 8 bits"
 				],
 				[
+					"Modo 2.x",
+					"IFC em GPCM: um registrador em qualquer endereço (o padrão depois de cada reset)"
+				],
+				[
+					"Modo 3.0",
+					"IFC em NOR ADM AVD e 0x3C escrito no offset 0xC3: registradores 0x00 a 0x1C"
+				],
+				[
 					"Driver",
-					"kmod-ls1021aiot-cpld (LEDs, dip_switch, shield_reset)"
+					"kmod-ls1021aiot-cpld: LED0, GPIO (28 linhas), reset controller, watchdog, sysfs (status, reset_cause, action, reset/<chip>)"
 				]
 			],
-			"notes": "Regras: nunca ler 32 bits de uma vez, e preservar os bits 1 e 3 (o valor-sombra padrão é 0xF6)."
+			"notes": "Regras: nunca ler 32 bits de uma vez. No modo 2.x, preservar os bits 1 e 3 do registrador de escrita (o valor padrão é 0xF6).",
+			"tool": [
+				"cpld",
+				"Abrir o painel da CPLD"
+			]
 		},
 		"osc-y3": {
 			"tab": "Y3 25 MHz",
@@ -547,7 +559,8 @@
 					"verde = link, laranja = atividade, calculados pelo próprio switch"
 				]
 			],
-			"notes": "O pino D13 do Arduino é o SCK deste SPI: um shield que force esse pino derruba a rede."
+			"notes": "O pino D13 do Arduino é o SCK deste SPI: um shield que force esse pino derruba a rede.",
+			"reset": "switch"
 		},
 		"phy1": {
 			"tab": "U36 AR8033",
@@ -582,7 +595,8 @@
 					"RST_SGMII1_PHY_B, pelo CPLD"
 				]
 			],
-			"live": "phy"
+			"live": "phy",
+			"reset": "sgmii1_phy"
 		},
 		"phy2": {
 			"tab": "U37 AR8033",
@@ -617,7 +631,8 @@
 					"RST_SGMII2_PHY_B, pelo CPLD"
 				]
 			],
-			"live": "phy"
+			"live": "phy",
+			"reset": "sgmii2_phy"
 		},
 		"serdes-mux": {
 			"tab": "U23 CBTL02043A",
@@ -1267,7 +1282,8 @@
 					"U40"
 				]
 			],
-			"notes": "Não escrevemos nos endereços 0x39, 0x3D e 0x60, nem varremos o i2c-1: isso já travou o barramento."
+			"notes": "Não escrevemos nos endereços 0x39, 0x3D e 0x60, nem varremos o i2c-1: isso já travou o barramento.",
+			"reset": "hdmi"
 		},
 		"hdmi-esd": {
 			"tab": "U40 CM2020",
@@ -1359,7 +1375,8 @@
 					"Portas",
 					"4 a jusante"
 				]
-			]
+			],
+			"reset": "usb_hub"
 		},
 		"xtal-y500": {
 			"tab": "Y500 25 MHz",
@@ -1568,7 +1585,8 @@
 			"proto": [
 				"Bluetooth LE 4.2",
 				"HCI H4 sobre UART"
-			]
+			],
+			"reset": "arduino_shield"
 		},
 		"fxos8700": {
 			"tab": "FRDM FXOS8700",

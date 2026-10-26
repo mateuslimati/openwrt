@@ -6,10 +6,12 @@
 'require ls1021aiot.common as common';
 
 /*
- * The 16 lines of the PCA9555 (U2): the mode of each (input or output),
- * the level it reads as an input and the level to drive as an output.
- * IO0_0..IO0_7 are on J501 (PORT 1 on the rear panel), IO1_0..IO1_7 go
- * to the CPLD, which leaves them unused.
+ * The digital I/Os: the 16 lines of the PCA9555 (U2) and, with CPLD image
+ * 3.0, the 28 of the CPLD (U33). For each, the mode (input or output), the
+ * level it reads as an input and the level to drive as an output.
+ * IO0_0..IO0_7 of the PCA9555 and CPLD_EXPAND0-5 are on J501 (PORT 1 on
+ * the rear panel); IO1_0..IO1_7 of the PCA9555 are wired to GPIO_EXPAND8-15
+ * of the CPLD.
  */
 
 var callIo = rpc.declare({
@@ -24,20 +26,46 @@ var callSetIo = rpc.declare({
 	params: [ 'line', 'dir', 'value' ]
 });
 
-/* line -> where it goes */
+var callLoopback = rpc.declare({
+	object: 'ls1021aiot',
+	method: 'loopback'
+});
+
+/* line -> where it goes; 0-15 PCA9555, 16-43 CPLD */
 var WHERE = [
 	'J501.3', 'J501.5', 'J501.9', 'J501.11', 'J501.13', 'J501.17', 'J501.19', 'J501.18',
-	'CPLD D6', 'CPLD D5', 'CPLD B4', 'CPLD B5', 'CPLD A5', 'CPLD A4', 'CPLD C6', 'CPLD C7'
+	'CPLD GPIO_EXPAND8', 'CPLD GPIO_EXPAND9', 'CPLD GPIO_EXPAND10', 'CPLD GPIO_EXPAND11',
+	'CPLD GPIO_EXPAND12', 'CPLD GPIO_EXPAND13', 'CPLD GPIO_EXPAND14', 'CPLD GPIO_EXPAND15',
+	'J501.2', 'J501.6', 'J501.8', 'J501.10', 'J501.14', 'J501.16',
+	'J17.3 (Arduino D2)', 'J17.4 (Arduino D3)', 'J17.5 (Arduino D4)', 'J17.6 (Arduino D5)',
+	'J17.7 (Arduino D6)', 'J17.8 (Arduino D7)',
+	'PCA9555 IO1_0', 'PCA9555 IO1_1', 'PCA9555 IO1_2', 'PCA9555 IO1_3',
+	'PCA9555 IO1_4', 'PCA9555 IO1_5', 'PCA9555 IO1_6', 'PCA9555 IO1_7',
+	'TP9', 'TP10', 'TP11', 'TP12', 'TP13', 'TP14', 'TP15', 'TP16'
 ];
+var CPLD_FIRST = 16;
+/* GPIO_EXPAND15 is an input on the CPLD */
+var IN_ONLY = { 35: true };
 
-/* J501, pin -> what is on it: a line of the PCA9555 (number) or a name */
+/* J501, pin -> what is on it: an I/O line (number) or a name */
 var J501 = {
-	1: '3,3 V', 2: 'CPLD0', 3: 0, 4: '5 V', 5: 1, 6: 'CPLD1', 7: 'GND', 8: 'CPLD2', 9: 2, 10: 'CPLD3',
-	11: 3, 12: 'GND', 13: 4, 14: 'CPLD4', 15: 'GND', 16: 'CPLD5', 17: 5, 18: 7, 19: 6, 20: 'GND'
+	1: '3,3 V', 2: 16, 3: 0, 4: '5 V', 5: 1, 6: 17, 7: 'GND', 8: 18, 9: 2, 10: 19,
+	11: 3, 12: 'GND', 13: 4, 14: 20, 15: 'GND', 16: 21, 17: 5, 18: 7, 19: 6, 20: 'GND'
 };
 
 function name(i) {
-	return i < 8 ? 'IO0_' + i : 'IO1_' + (i - 8);
+	if (i < 8)
+		return 'IO0_' + i;
+	if (i < 16)
+		return 'IO1_' + (i - 8);
+	i -= CPLD_FIRST;
+	if (i < 6)
+		return 'CPLD' + i;
+	if (i < 12)
+		return 'D' + (i - 4);
+	if (i < 20)
+		return 'GPX' + (i - 4);
+	return 'TP' + (i - 11);
 }
 
 return view.extend({
@@ -62,6 +90,40 @@ return view.extend({
 		}, this));
 	},
 
+	handleLoopback: function() {
+		this.loop.replaceChildren(E('p', { 'class': 'spinning' }, 'Testando as 8 ligações nos dois sentidos (uns 7 s)...'));
+		return callLoopback().then(L.bind(function(r) {
+			this.loop.replaceChildren(this.renderLoopback(r));
+			return this.refresh();
+		}, this));
+	},
+
+	renderLoopback: function(r) {
+		if (!r || !r.ok)
+			return E('p', { 'class': 'ls-muted' }, 'O teste precisa das E/S da CPLD (imagem 3.0).');
+
+		var row = function(dir, label) {
+			return E('tr', { 'class': 'tr' }, [ E('td', { 'class': 'td' }, label) ].concat([ 0, 1, 2, 3, 4, 5, 6, 7 ].map(function(b) {
+				var x = r.bits.filter(function(e) { return e.dir == dir && e.bit == b; })[0];
+				if (!x)
+					return E('td', { 'class': 'td center ls-muted', 'title': 'a CPLD não dirige esta linha' }, '-');
+				return E('td', { 'class': 'td center', 'title': x.checks + ' verificações, ' + x.failed + ' falhas' },
+					E('span', { 'class': 'ls-level ' + (x.failed ? 'ls-level-bad' : 'ls-level-hi') }, x.failed ? x.failed + ' falha(s)' : 'ok'));
+			})));
+		};
+
+		return E('div', {}, [
+			E('p', {}, [ E('strong', {}, r.failed ? r.failed + ' falha(s)' : 'Tudo certo'), ' em ', r.checks, ' verificações, às ', new Date().toLocaleTimeString(), '.' ]),
+			E('div', { 'class': 'ls-scroll' }, E('table', { 'class': 'table' }, [
+				E('tr', { 'class': 'tr table-titles' }, [ E('th', { 'class': 'th' }, 'Sentido') ].concat([ 0, 1, 2, 3, 4, 5, 6, 7 ].map(function(b) {
+					return E('th', { 'class': 'th center' }, 'IO1_' + b + ' ↔ GPX' + (8 + b));
+				}))),
+				row('cpld>pca', 'CPLD dirige, PCA9555 lê'),
+				row('pca>cpld', 'PCA9555 dirige, CPLD lê')
+			]))
+		]);
+	},
+
 	renderHeader: function(lines) {
 		var row = function(odd) {
 			var cells = [];
@@ -82,6 +144,19 @@ return view.extend({
 		var self = this;
 		if (!lines.length)
 			return E('p', { 'class': 'ls-muted' }, 'O PCA9555 não foi encontrado (gpiochip 0-0023).');
+
+		var cpld = lines.filter(function(l) { return l.line >= CPLD_FIRST; });
+		return E('div', {}, [
+			E('h4', {}, [ 'PCA9555 (U2) ', E('a', { 'href': common.url('pca9555') }, '→') ]),
+			this.renderLines(lines.filter(function(l) { return l.line < CPLD_FIRST; })),
+			E('h4', {}, [ 'CPLD (U33) ', E('a', { 'href': common.url('cpld') }, '→') ]),
+			cpld.length ? this.renderLines(cpld) :
+				E('p', { 'class': 'ls-muted' }, 'As E/S da CPLD precisam da imagem 3.0 e do kmod-ls1021aiot-cpld novo.')
+		]);
+	},
+
+	renderLines: function(lines) {
+		var self = this;
 
 		var btn = function(label, active, fn) {
 			return E('button', {
@@ -105,7 +180,7 @@ return view.extend({
 				E('td', { 'class': 'td' }, E('div', { 'class': 'ls-toolbar', 'style': 'margin:0' }, [
 					btn('Entrada', !out, function() { return out ? self.handleSet(l.line, 'in', 0) : null; }),
 					/* a line made an output starts at the level it reads now */
-					btn('Saída', out, function() { return out ? null : self.handleSet(l.line, 'out', l.value); })
+					IN_ONLY[l.line] ? '' : btn('Saída', out, function() { return out ? null : self.handleSet(l.line, 'out', l.value); })
 				])),
 				E('td', { 'class': 'td' }, out
 					? E('div', { 'class': 'ls-toolbar', 'style': 'margin:0' }, [
@@ -122,6 +197,7 @@ return view.extend({
 		this.stamp = E('span', { 'class': 'ls-muted' }, '');
 		this.header = E('div', {}, this.renderHeader(lines));
 		this.table = E('div', { 'class': 'ls-scroll' }, this.renderTable(lines));
+		this.loop = E('div', {});
 
 		poll.add(L.bind(this.refresh, this), 1);
 
@@ -139,21 +215,37 @@ return view.extend({
 				'.ls-pin-hi{background:#2e7d32;color:#fff}',
 				'.ls-pin-hi small{color:#c8e6c9}',
 				'.ls-level{display:inline-block;padding:2px 10px;border-radius:10px;background:#424242;color:#ddd}',
-				'.ls-level-hi{background:#2e7d32;color:#fff}'
+				'.ls-level-hi{background:#2e7d32;color:#fff}',
+				'.ls-level-bad{background:#c62828;color:#fff}'
 			].join('')),
 			E('h2', {}, 'E/S digitais'),
 			E('p', { 'class': 'cbi-section-descr' }, [
-				'As 16 linhas do expansor ', E('a', { 'href': common.url('pca9555') }, 'PCA9555 (U2)'), ', no I2C. ',
+				'As 16 linhas do expansor ', E('a', { 'href': common.url('pca9555') }, 'PCA9555 (U2)'), ', no I2C, e as 28 da ',
+				E('a', { 'href': common.url('cpld') }, 'CPLD (U33)'), ', no IFC. ',
 				'Em entrada, a linha mostra o nível que lê; em saída, você escolhe o nível que ela fornece. ',
-				'IO0_0 a IO0_7 estão no conector J501 (PORT 1, no painel de trás); IO1_0 a IO1_7 vão ao CPLD, que não as usa.'
+				'IO0_0 a IO0_7 do PCA9555 e CPLD0 a CPLD5 estão no conector J501 (PORT 1, no painel de trás). ',
+				'IO1_0 a IO1_7 do PCA9555 são ligadas direto a GPX8 a GPX15 da CPLD: deixe um dos lados em entrada. ',
+				'D2 a D7 são os pinos digitais do header Arduino, onde está a FRDM-KW41Z; TP9 a TP16 são pontos de teste.'
 			]),
 			E('div', { 'class': 'alert-message warning' }, [
 				'Os pinos trabalham a 3,3 V: não ligue neles mais que isso. Em saída, use cargas leves (uma entrada lógica, um LED com resistor) ',
 				'e não ligue a saída a outra saída nem direto ao GND ou ao 3,3 V. ',
-				'As linhas voltam a ser entradas quando a placa é desligada.'
+				'As linhas voltam a ser entradas quando a placa é desligada (as da CPLD também num reset a frio). ',
+				'CPLD0 a CPLD4 só viram saída com o mux QE/LCD da CPLD em LCD, o padrão.'
 			]),
 			E('h3', {}, [ 'J501 (PORT 1) ', E('span', { 'class': 'ls-muted', 'style': 'font-size:.8em;font-weight:normal' }, 'tracejado: entrada · contorno amarelo: saída · verde: nível 1') ]),
 			this.header,
+			E('h3', {}, 'Teste de loopback: CPU ↔ CPLD'),
+			E('p', { 'class': 'cbi-section-descr' }, [
+				'IO1_0 a IO1_7 do PCA9555 (que a CPU acessa pelo I2C) são ligadas direto a GPX8 a GPX15 da CPLD (pelo IFC). ',
+				'O teste põe padrões de um lado e lê do outro, nos dois sentidos, e depois devolve as 16 linhas ao modo em que estavam. ',
+				'Uma falha aponta uma ligação aberta, em curto ou presa, ou um problema no caminho I2C ou IFC.'
+			]),
+			E('div', { 'class': 'ls-toolbar' }, E('button', {
+				'class': 'btn cbi-button cbi-button-action',
+				'click': ui.createHandlerFn(this, 'handleLoopback')
+			}, 'Testar as ligações')),
+			this.loop,
 			E('h3', {}, [ 'Linhas ', this.stamp ]),
 			this.table
 		]);

@@ -60,6 +60,14 @@
 			"path": "ls1021aiot/adc"
 		}
 	},
+	"admin/status/ls1021aiot/cpld": {
+		"title": "CPLD",
+		"order": 7,
+		"action": {
+			"type": "view",
+			"path": "ls1021aiot/cpld"
+		}
+	},
 	"admin/status/ls1021aiot/chip/soc": {
 		"action": {
 			"type": "view",

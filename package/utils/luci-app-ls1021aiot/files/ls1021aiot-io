@@ -1,41 +1,114 @@
 #!/bin/sh
-# The 16 lines of the PCA9555 (U2, 0-0023) of the LS1021A-IoT, through
-# the GPIO sysfs: an output set here keeps its level after the command
-# ends. IO0_0..IO0_7 (lines 0-7) go to J501 (PORT 1), IO1_0..IO1_7
-# (lines 8-15) to the CPLD, which leaves them unused.
+# The digital I/Os of the LS1021A-IoT, through the GPIO sysfs: an output
+# set here keeps its level after the command ends.
+#  - lines 0-15: the 16 lines of the PCA9555 (U2, 0-0023). IO0_0..IO0_7
+#    (lines 0-7) go to J501 (PORT 1), IO1_0..IO1_7 (lines 8-15) to the
+#    CPLD (GPIO_EXPAND8-15)
+#  - lines 16-43: the 28 lines of the CPLD (image 3.0, ls1021aiot-cpld):
+#    CPLD_EXPAND0-5 (J501), ARD_D2-D7 (J17), GPIO_EXPAND8-15 (the other
+#    end of IO1 of the PCA9555) and TP9-TP16
 #
 #   ls1021aiot-io get			one line per I/O: <line> <in|out> <0|1>
 #   ls1021aiot-io set <line> in
 #   ls1021aiot-io set <line> out <0|1>
+#   ls1021aiot-io loopback		test the wires between IO1 of the PCA9555
+#					and GPIO_EXPAND8-15 of the CPLD
 #
 # The lines are exported on first use; that does not change them.
 
 base() {
 	local c
 	for c in /sys/class/gpio/gpiochip*; do
-		[ "$(cat $c/label 2>/dev/null)" = 0-0023 ] && { cat $c/base; return 0; }
+		[ "$(cat $c/label 2>/dev/null)" = "$1" ] && { cat $c/base; return 0; }
 	done
 	return 1
 }
 
-B=$(base) || { echo "PCA9555 not found" >&2; exit 1; }
+B=$(base 0-0023) || { echo "PCA9555 not found" >&2; exit 1; }
+C=$(base ls1021aiot-cpld)
+N=15
+[ -n "$C" ] && N=43
+
+gpio() {
+	[ $1 -lt 16 ] && echo $((B + $1)) || echo $((C + $1 - 16))
+}
 
 line() {
-	local g=/sys/class/gpio/gpio$((B + $1))
-	[ -d $g ] || echo $((B + $1)) > /sys/class/gpio/export
+	local n=$(gpio $1) g
+	g=/sys/class/gpio/gpio$n
+	[ -d $g ] || echo $n > /sys/class/gpio/export
 	echo $g
 }
 
+dir() { cat $(line $1)/direction; }
+val() { cat $(line $1)/value; }
+put() {
+	local g=$(line $1)
+	case "$2" in
+	in) echo in > $g/direction ;;
+	0) echo low > $g/direction ;;
+	1) echo high > $g/direction ;;
+	esac
+}
+
+# Drive the 8 bit pattern $2 on the lines from $1 up and read it back on
+# the lines from $3 up; print "<bit>:<expected>:<read>" for each bit. The
+# CPLD drives only 7 of them (GPIO_EXPAND15 is an input on its side).
+drive() {
+	local from=$1 p=$2 to=$3 n=$4 b e
+	for b in $(seq 0 $((n - 1))); do
+		put $((from + b)) $(((p >> b) & 1))
+	done
+	for b in $(seq 0 $((n - 1))); do
+		e=$(((p >> b) & 1))
+		echo "$b:$e:$(val $((to + b)))"
+	done
+}
+
+# Each direction in turn, with the other side as inputs; the lines go back
+# to how they were.
+loopback() {
+	local i saved="" p r
+	[ -n "$C" ] || { echo "CPLD GPIO not found (image 3.0)" >&2; exit 1; }
+	for i in $(seq 8 15) $(seq 28 35); do
+		saved="$saved $i:$(dir $i):$(val $i)"
+	done
+	for i in $(seq 8 15) $(seq 28 35); do
+		put $i in
+	done
+	for p in 0x01 0x02 0x04 0x08 0x10 0x20 0x40 0x7e 0x7d 0x7b 0x77 0x6f 0x5f 0x3f 0x55 0x2a 0x00 0x7f; do
+		for r in $(drive 28 $((p)) 8 7); do
+			echo "cpld>pca $p $r"
+		done
+	done
+	for i in $(seq 28 34); do put $i in; done
+	for p in 0x01 0x02 0x04 0x08 0x10 0x20 0x40 0x80 0xfe 0xfd 0xfb 0xf7 0xef 0xdf 0xbf 0x7f 0x55 0xaa 0x00 0xff; do
+		for r in $(drive 8 $((p)) 28 8); do
+			echo "pca>cpld $p $r"
+		done
+	done
+	for i in $(seq 8 15); do put $i in; done
+	for i in $saved; do
+		case "${i#*:}" in
+		in:*) put ${i%%:*} in ;;
+		out:*) put ${i%%:*} ${i##*:} ;;
+		esac
+	done
+}
+
 case "$1" in
+loopback)
+	loopback
+	;;
 get)
-	for i in $(seq 0 15); do
+	for i in $(seq 0 $N); do
 		g=$(line $i)
 		echo "$i $(cat $g/direction) $(cat $g/value)"
 	done
 	;;
 set)
 	case "$2" in
-	[0-9]|1[0-5]) ;;
+	[0-9]|[1-3][0-9]|4[0-3]) [ "$2" -le $N ] || { echo "bad line: $2" >&2; exit 1; } ;;
 	*) echo "bad line: $2" >&2; exit 1 ;;
 	esac
 	g=$(line $2)

@@ -19,6 +19,12 @@ var callControl = rpc.declare({
 	params: [ 'action', 'value' ]
 });
 
+var callCpldSet = rpc.declare({
+	object: 'ls1021aiot',
+	method: 'cpld_set',
+	params: [ 'what', 'name', 'value' ]
+});
+
 /* the buttons of chips.json "control": the action of the backend's
  * control method and the values it takes */
 var CONTROLS = {
@@ -124,6 +130,19 @@ return view.extend({
 			]),
 			c.tool ? E('div', { 'class': 'ls-toolbar', 'style': 'margin-top:1em' },
 				E('a', { 'class': 'btn cbi-button cbi-button-action', 'href': L.url('admin/status/ls1021aiot', c.tool[0]) }, c.tool[1])) : '',
+			c.reset ? E('h3', {}, 'Reset') : '',
+			c.reset ? E('div', { 'class': 'ls-toolbar' }, [
+				E('button', {
+					'class': 'btn cbi-button cbi-button-action',
+					'click': ui.createHandlerFn(this, function() {
+						return callCpldSet('reset', c.reset, 'pulse').then(function(res) {
+							ui.addNotification(null, E('p', (res && res.ok) ? c.tab + ' reiniciado pela CPLD.' :
+								'Não foi possível: precisa da CPLD 3.0 e do kmod-ls1021aiot-cpld novo.'), (res && res.ok) ? 'info' : 'error');
+						}).then(refresh);
+					})
+				}, 'Reiniciar este chip'),
+				E('a', { 'class': 'btn cbi-button', 'href': L.url('admin/status/ls1021aiot/cpld') }, 'Todos os resets')
+			]) : '',
 			CONTROLS[c.control] ? E('h3', {}, 'Controle') : '',
 			CONTROLS[c.control] ? E('div', { 'class': 'ls-toolbar' }, CONTROLS[c.control].map(function(b) {
 				return E('button', {
