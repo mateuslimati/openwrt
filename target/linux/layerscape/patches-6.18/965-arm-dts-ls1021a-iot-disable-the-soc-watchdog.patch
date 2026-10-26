@@ -1,0 +1,24 @@
+From: Mateus Lima Alves <mateuslima.ti@gmail.com>
+Subject: [PATCH] ARM: dts: ls1021a-iot: disable the SoC watchdog
+
+The WDOG1 counter runs from the 32 kHz RTC input, which is grounded on
+this board, so the watchdog never expires and a hung system is never
+reset. Disable it, so that /dev/watchdog is the one in the system CPLD
+(image 3.0), which counts from its own 25 MHz oscillator.
+
+Signed-off-by: Mateus Lima Alves <mateuslima.ti@gmail.com>
+---
+--- a/arch/arm/boot/dts/nxp/ls/ls1021a-iot.dts
++++ b/arch/arm/boot/dts/nxp/ls/ls1021a-iot.dts
+@@ -466,3 +466,11 @@
+ &uart1 {
+ 	status = "okay";
+ };
++
++&wdog0 {
++	/*
++	 * It never counts on this board: its clock is the 32 kHz RTC input,
++	 * and the RTC ball is grounded. The system CPLD has the watchdog.
++	 */
++	status = "disabled";
++};
