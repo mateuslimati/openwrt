@@ -22,6 +22,19 @@ var WHERE = [
 ];
 var FULL = 4095;
 
+/* J500 (PORT 0), pin -> an ADC channel (number) or a name */
+var J500 = {
+	1: '3,3 V', 2: 8, 3: 4, 4: 9, 5: 5, 6: 10, 7: 6, 8: 11, 9: 7, 10: '3,3 V',
+	11: 'GND', 12: 'SPI1_CS0', 13: 'UART_CTS', 14: 'SPI1_SOUT', 15: 'UART_RTS', 16: 'SPI1_SIN',
+	17: 'UART_RX', 18: 'SPI1_SCK', 19: 'UART_TX', 20: 'GND'
+};
+/* what the other pins are */
+var J500_INFO = {
+	12: 'SPI1_PCS0 do LS1021A (o mesmo SPI1 do switch, que usa o CS1)',
+	13: 'LPUART1_CTS_B', 14: 'SPI1_SOUT (MOSI)', 15: 'LPUART1_RTS_B', 16: 'SPI1_SIN (MISO)',
+	17: 'LPUART1_SIN', 18: 'SPI1_SCK', 19: 'LPUART1_SOUT'
+};
+
 function volts(raw, scale) {
 	return (raw * scale / 1000).toFixed(3).replace('.', ',') + ' V';
 }
@@ -40,7 +53,30 @@ return view.extend({
 			m.max = Math.max(m.max, r);
 		}, this));
 		this.table.replaceChildren(this.renderTable(raw, scale));
+		this.header.replaceChildren(this.renderHeader(raw, scale));
 		this.stamp.textContent = 'atualizado às ' + new Date().toLocaleTimeString();
+	},
+
+	renderHeader: function(raw, scale) {
+		var row = function(odd) {
+			var cells = [];
+			for (var p = odd ? 1 : 2; p <= 20; p += 2) {
+				var w = J500[p], ch = typeof w == 'number', r = ch ? raw[w] : null, have = ch && r != null;
+				var pct = have ? Math.min(100, 100 * r / FULL) : 0;
+				cells.push(E('div', {
+					'class': 'ls-pin' + (ch ? ' ls-pin-adc' + (have && r >= FULL ? ' ls-pin-full' : '') : '') +
+						(w == 'GND' ? ' ls-pin-gnd' : '') + (/V$/.test(w) ? ' ls-pin-pwr' : '') + (J500_INFO[p] ? ' ls-pin-sig' : ''),
+					'style': have ? 'background:linear-gradient(to top,#1565c0 ' + pct.toFixed(0) + '%,#2b2b2b ' + pct.toFixed(0) + '%)' : '',
+					'title': 'J500.' + p + ': ' + (ch ? 'ADC CH' + w + (have ? ', ' + volts(r, scale) + (r >= FULL ? ' (no limite)' : '') : '') : (J500_INFO[p] || w))
+				}, [
+					E('small', {}, p),
+					E('span', {}, ch ? 'CH' + w : w),
+					have ? E('b', {}, (r * scale / 1000).toFixed(2).replace('.', ',')) : ''
+				]));
+			}
+			return E('div', { 'class': 'ls-pinrow' }, cells);
+		};
+		return E('div', { 'class': 'ls-header' }, [ row(true), row(false) ]);
 	},
 
 	renderTable: function(raw, scale) {
@@ -81,6 +117,7 @@ return view.extend({
 		this.seen = [];
 		this.stamp = E('span', { 'class': 'ls-muted' }, '');
 		this.table = E('div', { 'class': 'ls-scroll' });
+		this.header = E('div', {});
 		this.update(res);
 
 		poll.add(function() {
@@ -93,7 +130,17 @@ return view.extend({
 				'.ls-bar{position:relative;height:12px;min-width:80px;background:#333;border-radius:6px;overflow:hidden}',
 				'.ls-bar-fill{position:absolute;left:0;top:0;bottom:0;background:#4fc3f7;transition:width .3s}',
 				'.ls-bar-full{background:#ef5350}',
-				'.ls-bar-range{position:absolute;bottom:0;height:3px;background:#ffc107}'
+				'.ls-bar-range{position:absolute;bottom:0;height:3px;background:#ffc107}',
+				'.ls-header{display:inline-flex;flex-direction:column;gap:3px;padding:6px;background:#1b1b1b;border-radius:6px;max-width:100%;overflow-x:auto}',
+				'.ls-pinrow{display:flex;gap:3px}',
+				'.ls-pin{width:62px;min-width:62px;height:48px;border:1px solid #555;border-radius:4px;background:#2b2b2b;color:#bbb;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;line-height:1.2}',
+				'.ls-pin small{font-size:9px;color:#888}',
+				'.ls-pin b{font-size:12px;color:#fff}',
+				'.ls-pin-gnd{color:#888}',
+				'.ls-pin-pwr{color:#ef9a9a}',
+				'.ls-pin-sig{color:#ce93d8}',
+				'.ls-pin-adc{border:2px solid #4fc3f7;color:#e0e0e0}',
+				'.ls-pin-full{border-color:#ef5350}'
 			].join('')),
 			E('h2', {}, 'Conversor A/D'),
 			E('p', { 'class': 'cbi-section-descr' }, [
@@ -106,6 +153,8 @@ return view.extend({
 				'Acima de 2,048 V a leitura para em 4095; não ligue mais que 3,3 V numa entrada. ',
 				'Uma entrada solta (sem nada ligado) não lê 0 V: ela flutua, e o valor muda sozinho.'
 			]),
+			E('h3', {}, [ 'J500 (PORT 0) ', E('span', { 'class': 'ls-muted', 'style': 'font-size:.8em;font-weight:normal' }, 'em volts; a cor azul enche o pino até 2,048 V · roxo: SPI1 e LPUART1 do LS1021A') ]),
+			this.header,
 			E('h3', {}, [ 'Entradas ', this.stamp ]),
 			this.table,
 			E('div', { 'class': 'ls-toolbar', 'style': 'margin-top:.6em' }, [

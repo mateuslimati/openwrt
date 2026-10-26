@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-ls1021aiot
 PKG_VERSION:=1.0
-PKG_RELEASE:=10
+PKG_RELEASE:=11
 PKG_LICENSE:=GPL-2.0-or-later
 
 include $(INCLUDE_DIR)/package.mk
@@ -28,8 +28,9 @@ define Package/luci-app-ls1021aiot/description
   drawing made from the board layout; each component page shows the
   close-up chips/<page>.jpg from there, when it is installed. Two
   more pages set the mode and level of the 16 lines of the PCA9555
-  I/O expander and of the 28 I/Os of the CPLD (ls1021aiot-io) and show
-  the 12 inputs of the MAX1239 ADC in volts. With CPLD image 3.0 a CPLD
+  I/O expander, of the 28 I/Os of the CPLD and of GPIO3_15-27 of the
+  LS1021A on J502 (ls1021aiot-io), with J501 and J502 drawn live, and
+  show the 12 inputs of the MAX1239 ADC in volts, J500 drawn with them. With CPLD image 3.0 a CPLD
   page resets each chip, resets the board (cold, warm or full), shows
   the watchdog, the controls and the lines the CPLD reads.
 endef
