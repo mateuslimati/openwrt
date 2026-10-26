@@ -8,9 +8,11 @@ case "$(board_name)" in
 	fsl,ls1021a-iot|\
 	fsl,ls1021a-iot-sdboot)
 		# the RTL8367RB switch ports, named after the LAN jacks, are
-		# bridged and join an existing network; eth0 is the SGMII port
+		# bridged and join an existing network; eth0 and eth1 are the
+		# two SGMII ports (ETH0 and ETH1), each its own WAN, ETH0 first
 		ucidef_set_interface_lan "lan2 lan3 lan4 lan5" "dhcp"
 		ucidef_set_interface_wan "eth0"
+		ucidef_set_interface "wan1" device "eth1" protocol "dhcp" metric "20"
 		;;
 	fsl,ls1028a-rdb|\
 	fsl,ls1028a-rdb-sdboot)

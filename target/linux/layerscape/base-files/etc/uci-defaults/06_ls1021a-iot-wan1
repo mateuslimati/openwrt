@@ -1,0 +1,21 @@
+#!/bin/sh
+# LS1021A-IoT: ETH1 is a second WAN (wan1, and wan16 for IPv6, from
+# board.d); put both in the wan firewall zone, which only lists wan and
+# wan6 by default.
+
+. /lib/functions.sh
+
+case "$(board_name)" in
+fsl,ls1021a-iot|fsl,ls1021a-iot-sdboot)
+	zone=$(uci show firewall | sed -n "s/^firewall\.\(@zone\[[0-9]*\]\)\.name='wan'$/\1/p" | head -n 1)
+	[ -n "$zone" ] || exit 0
+	for net in wan1 wan16; do
+		[ -n "$(uci -q get network.$net)" ] || continue
+		uci -q get firewall.$zone.network | grep -qw $net ||
+			uci add_list firewall.$zone.network=$net
+	done
+	uci commit firewall
+	;;
+esac
+
+exit 0
